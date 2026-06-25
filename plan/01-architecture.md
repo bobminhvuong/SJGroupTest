@@ -18,12 +18,13 @@
 ```
 
 ## Module map (NestJS)
-- **LocationModule** — CRUD cây location, cache tree.
-- **BookingModule** — tạo/đọc/huỷ booking, validate 3 rule + overlap lock.
-- **DepartmentModule** — danh mục department (EFM, FSS, AVS, ASS, ...).
-- **RedisModule** (global) — kết nối ioredis, expose `RedisService` (cache + lock helper).
-- **CommonModule** — filter, interceptor, pipe, custom exception.
+- **LocationModule** (`modules/location`) — CRUD cây location, cache tree qua `remember()`.
+- **BookingModule** (`modules/booking`) — tạo/đọc/huỷ booking, validate 3 rule + overlap lock.
+- **DepartmentModule** (`modules/department`) — danh mục department (EFM, FSS, AVS, ASS, ...).
+- **RedisModule** (`shared/redis`, `@Global`) — ioredis + `RedisService` (cache/tag/remember + lock) + `cache-keys.ts` registry.
 - **ConfigModule** — env (DB, Redis).
+- `common/` — **không phải module**, chỉ là class thuần: `BaseEntity`, `HttpExceptionFilter`, `BookingValidationException`.
+- `config/`, `database/` — TypeORM runtime config + DataSource/migration/seed cho CLI.
 
 ## Cross-cutting concerns
 | Concern | Triển khai |
@@ -39,10 +40,10 @@
 POST /bookings
   1. ValidationPipe kiểm DTO (định dạng, required).
   2. BookingService.create():
-     a. Load Location → kiểm tồn tại & bookable (capacity != null).
-     b. Rule 1: department matching.
+     a. Load Location → kiểm tồn tại & bookable (capacity/department/open_days != null).
+     b. Rule 1: department matching (booking.departmentId === location.departmentId).
      c. Rule 2: attendees <= capacity.
-     d. Rule 3: time validation (OpenTimeParser).
+     d. Rule 3: time validation (so open_days/open_from/open_to, không parse string).
      e. Acquire Redis lock  lock:booking:{locationId}:{date}  (SET NX PX).
      f. Trong lock: query overlap ở Postgres → nếu trùng giờ → reject.
      g. INSERT booking (trong transaction).

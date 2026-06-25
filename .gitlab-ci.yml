@@ -1,0 +1,94 @@
+# ============================================================================
+# GitLab CI/CD — Location & Booking API (NestJS)
+# Pipeline: lint -> test -> build -> docker (build & push image)
+# ============================================================================
+
+stages:
+  - lint
+  - test
+  - build
+  - docker
+
+# Template chung cho job chạy bằng Node (cache node_modules theo lock file)
+.node:
+  image: node:20-alpine
+  cache:
+    key:
+      files:
+        - package-lock.json
+    paths:
+      - .npm/
+      - node_modules/
+  before_script:
+    - npm ci --cache .npm --prefer-offline
+
+# ── Lint ────────────────────────────────────────────────────────────────────
+lint:
+  extends: .node
+  stage: lint
+  script:
+    - npm run lint
+
+# ── Unit test ───────────────────────────────────────────────────────────────
+test:unit:
+  extends: .node
+  stage: test
+  script:
+    - npm run test
+
+# ── E2E test (cần Postgres + Redis thật, dùng bộ biến DB_TEST_*) ─────────────
+test:e2e:
+  extends: .node
+  stage: test
+  services:
+    - name: postgres:16-alpine
+      alias: postgres
+    - name: redis:7-alpine
+      alias: redis
+  variables:
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: postgres
+    POSTGRES_DB: booking_test
+    DB_TEST_HOST: postgres
+    DB_TEST_PORT: '5432'
+    DB_TEST_USERNAME: postgres
+    DB_TEST_PASSWORD: postgres
+    DB_TEST_DATABASE: booking_test
+    REDIS_HOST: redis
+    REDIS_PORT: '6379'
+  script:
+    - npm run test:e2e
+  # Tạm cho phép fail vì e2e test thuộc Phase 3 (chưa viết). Bỏ dòng này khi đã có test.
+  allow_failure: true
+
+# ── Build (compile TS -> dist, giữ artifact cho job docker) ──────────────────
+build:
+  extends: .node
+  stage: build
+  script:
+    - npm run build
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 day
+
+# ── Docker build & push (chỉ main hoặc tag) ─────────────────────────────────
+docker:build:
+  stage: docker
+  image: docker:27
+  services:
+    - docker:27-dind
+  needs:
+    - build
+  variables:
+    DOCKER_TLS_CERTDIR: '/certs'
+    IMAGE_TAG: '$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA'
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_TAG'
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+  script:
+    - docker build -f docker/Dockerfile --target production -t "$IMAGE_TAG" -t "$CI_REGISTRY_IMAGE:latest" .
+    - docker push "$IMAGE_TAG"
+    - docker push "$CI_REGISTRY_IMAGE:latest"

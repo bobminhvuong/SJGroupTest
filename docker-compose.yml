@@ -1,0 +1,41 @@
+# Base hạ tầng: Postgres + Redis. Ở GỐC project nên `docker compose up -d` tự nạp
+# (và tự đọc .env ở gốc). Các override dev/prod nằm trong docker/.
+#   Hạ tầng:  docker compose up -d
+#   Dev:      docker compose -f docker-compose.yml -f docker/docker-compose.dev.yml up --build
+#   Prod:     docker compose -f docker-compose.yml -f docker/docker-compose.prod.yml up --build -d
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: booking-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_DATABASE:-booking}
+    ports:
+      - '${DB_PORT:-5432}:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${DB_USERNAME:-postgres}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: booking-redis
+    restart: unless-stopped
+    ports:
+      - '${REDIS_PORT:-6379}:6379'
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
+  redisdata:

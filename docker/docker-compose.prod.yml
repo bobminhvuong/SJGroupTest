@@ -1,0 +1,23 @@
+# Override PROD — chạy CÙNG base ở gốc (base phải là -f đầu tiên):
+#   docker compose -f docker-compose.yml -f docker/docker-compose.prod.yml up --build -d
+# Path relative tính theo thư mục file -f đầu (= gốc project) -> dùng "." và "docker/".
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: production
+    container_name: booking-app
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DB_HOST: postgres
+      REDIS_HOST: redis
+    ports:
+      - '${PORT:-3000}:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy

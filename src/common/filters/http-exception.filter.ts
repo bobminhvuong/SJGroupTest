@@ -9,7 +9,7 @@ import {
 import { Request, Response } from 'express';
 
 /**
- * Global filter: chuẩn hoá mọi lỗi về format thống nhất
+ * Global filter: normalizes every error into a uniform shape
  * { statusCode, message, error, timestamp, path }.
  */
 @Catch()
@@ -42,13 +42,18 @@ export class HttpExceptionFilter implements ExceptionFilter {
       message = exception.message;
     }
 
-    if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
+    const flatMessage = Array.isArray(message) ? message.join(', ') : message;
+
+    // Compare against the literal 500 (not the enum) to avoid no-unsafe-enum-comparison.
+    if (status >= 500) {
       this.logger.error(
         `${request.method} ${request.url} -> ${status}`,
         exception instanceof Error ? exception.stack : undefined,
       );
     } else {
-      this.logger.warn(`${request.method} ${request.url} -> ${status}: ${message}`);
+      this.logger.warn(
+        `${request.method} ${request.url} -> ${status}: ${flatMessage}`,
+      );
     }
 
     response.status(status).json({

@@ -8,16 +8,16 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
 
-  // Logger: dùng pino thay cho logger mặc định của Nest
+  // Logger: use pino instead of Nest's default logger.
   app.useLogger(app.get(Logger));
 
-  // Bật lifecycle hooks để onModuleDestroy chạy khi SIGTERM/SIGINT
-  // (đóng Redis/DB sạch khi docker stop).
+  // Enable lifecycle hooks so onModuleDestroy runs on SIGTERM/SIGINT
+  // (clean shutdown of Redis/DB when docker stops the container).
   app.enableShutdownHooks();
 
   app.setGlobalPrefix('api/v1');
 
-  // Validate + transform DTO toàn cục
+  // Validate + transform DTOs globally.
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -26,10 +26,10 @@ async function bootstrap() {
     }),
   );
 
-  // Chuẩn hoá response lỗi
+  // Normalize error responses.
   app.useGlobalFilters(new HttpExceptionFilter());
 
-  // Swagger tại /docs
+  // Swagger at /docs
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Location & Booking API')
     .setDescription('SJ Assignment 2026 — Location tree + Booking management')

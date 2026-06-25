@@ -1,8 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
 
 /**
- * Ném khi booking vi phạm rule nghiệp vụ (department / capacity / time / overlap).
- * Kế thừa BadRequestException để trả 400 với message rõ lý do.
+ * Thrown when a booking violates a business rule (department / capacity / time /
+ * overlap). Extends BadRequestException to return 400 with a clear reason message.
  */
 export class BookingValidationException extends BadRequestException {
   constructor(message: string) {

@@ -2,9 +2,9 @@ import 'dotenv/config';
 import { DataSource, DataSourceOptions } from 'typeorm';
 
 /**
- * DataSource dùng riêng cho TypeORM CLI (migration generate/run/revert) và seed.
- * Tách khỏi cấu hình runtime của Nest (config/typeorm.config.ts) vì CLI cần
- * một instance được export trực tiếp, không qua DI container.
+ * DataSource dedicated to the TypeORM CLI (migration generate/run/revert) and seeds.
+ * Kept separate from the Nest runtime config (config/typeorm.config.ts) because the
+ * CLI needs a directly-exported instance, not one resolved through the DI container.
  */
 export const dataSourceOptions: DataSourceOptions = {
   type: 'postgres',
@@ -13,12 +13,13 @@ export const dataSourceOptions: DataSourceOptions = {
   username: process.env.DB_USERNAME ?? 'postgres',
   password: process.env.DB_PASSWORD ?? 'postgres',
   database: process.env.DB_DATABASE ?? 'booking',
-  // Glob theo .ts khi chạy bằng ts-node (CLI/seed). Build prod sẽ map sang dist.
+  // Glob over .ts when running via ts-node (CLI/seed). Prod build maps these to dist.
   entities: ['src/**/*.entity.ts'],
   migrations: ['src/database/migrations/*.ts'],
-  synchronize: false, // luôn dùng migration, không auto-sync schema
+  synchronize: false, // always use migrations, never auto-sync the schema
   logging: process.env.NODE_ENV === 'development',
 };
 
+// Note: the TypeORM CLI (1.x) requires the file to export EXACTLY ONE DataSource
+// instance. So do NOT add `export default` (it would become 2 DataSource exports).
 export const AppDataSource = new DataSource(dataSourceOptions);
-export default AppDataSource;

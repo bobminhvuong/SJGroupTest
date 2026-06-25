@@ -5,7 +5,10 @@ import { LoggerModule } from 'nestjs-pino';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { TypeOrmConfigService } from './config/typeorm.config';
-import { RedisModule } from './shared/redis/redis.module';
+import { CacheModule } from './shared/cache/cache.module';
+import { DepartmentModule } from './modules/department/department.module';
+import { LocationModule } from './modules/location/location.module';
+import { BookingModule } from './modules/booking/booking.module';
 
 @Module({
   imports: [
@@ -20,8 +23,10 @@ import { RedisModule } from './shared/redis/redis.module';
       },
     }),
     TypeOrmModule.forRootAsync({ useClass: TypeOrmConfigService }),
-    RedisModule,
-    // Feature modules (Phase 1+): LocationModule, BookingModule, DepartmentModule
+    CacheModule,
+    DepartmentModule,
+    LocationModule,
+    BookingModule,
   ],
   controllers: [AppController],
   providers: [AppService],

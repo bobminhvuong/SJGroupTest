@@ -1,11 +1,16 @@
 import { Global, Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
-import { REDIS_CLIENT, RedisService } from './redis.service';
+import { CacheService, LockService } from './cache.contracts';
+import {
+  REDIS_CLIENT,
+  RedisCacheService,
+  RedisLockService,
+} from './redis.adapter';
 
 /**
- * @Global() để các feature module inject RedisService mà không cần import lại.
- * Khai báo 1 lần ở AppModule.
+ * @Global() — feature modules inject CacheService / LockService without re-importing.
+ * Switch backend = change the useClass here (e.g. MemoryCacheService), no business changes.
  */
 @Global()
 @Module({
@@ -21,8 +26,9 @@ import { REDIS_CLIENT, RedisService } from './redis.service';
           maxRetriesPerRequest: null,
         }),
     },
-    RedisService,
+    { provide: CacheService, useClass: RedisCacheService },
+    { provide: LockService, useClass: RedisLockService },
   ],
-  exports: [RedisService],
+  exports: [CacheService, LockService],
 })
-export class RedisModule {}
+export class CacheModule {}

@@ -3,9 +3,9 @@ import { ConfigService } from '@nestjs/config';
 import { TypeOrmModuleOptions, TypeOrmOptionsFactory } from '@nestjs/typeorm';
 
 /**
- * Cấu hình TypeORM cho runtime của Nest (TypeOrmModule.forRootAsync).
- * Entity được nạp tự động qua autoLoadEntities; migration chạy bằng CLI riêng
- * (xem src/database/data-source.ts), không auto-sync.
+ * TypeORM config for the Nest runtime (TypeOrmModule.forRootAsync).
+ * Entities are loaded automatically via autoLoadEntities; migrations run through a
+ * separate CLI (see src/database/data-source.ts), no auto-sync.
  */
 @Injectable()
 export class TypeOrmConfigService implements TypeOrmOptionsFactory {

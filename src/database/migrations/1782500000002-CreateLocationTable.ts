@@ -11,7 +11,7 @@ export class CreateLocationTable1782500000002 implements MigrationInterface {
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
-      `CREATE TYPE "public"."location_type_enum" AS ENUM('BUILDING', 'FLOOR', 'ROOM', 'OTHER')`,
+      `CREATE TYPE "public"."location_type_enum" AS ENUM('BUILDING', 'FLOOR', 'OFFICE', 'MEETING_ROOM', 'OTHER')`,
     );
     await queryRunner.query(
       `CREATE TABLE "location" (
@@ -23,7 +23,6 @@ export class CreateLocationTable1782500000002 implements MigrationInterface {
         "location_number" character varying(64) NOT NULL,
         "type" "public"."location_type_enum" NOT NULL,
         "parent_id" bigint,
-        "department_id" bigint,
         "capacity" integer,
         "open_from" TIME,
         "open_to" TIME,
@@ -40,15 +39,9 @@ export class CreateLocationTable1782500000002 implements MigrationInterface {
     await queryRunner.query(
       `ALTER TABLE "location" ADD CONSTRAINT "FK_92137b1457c0969fe2d20a9faff" FOREIGN KEY ("parent_id") REFERENCES "location"("id") ON DELETE RESTRICT ON UPDATE NO ACTION`,
     );
-    await queryRunner.query(
-      `ALTER TABLE "location" ADD CONSTRAINT "FK_002a6201a4ad707163564e8ac01" FOREIGN KEY ("department_id") REFERENCES "department"("id") ON DELETE RESTRICT ON UPDATE NO ACTION`,
-    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(
-      `ALTER TABLE "location" DROP CONSTRAINT "FK_002a6201a4ad707163564e8ac01"`,
-    );
     await queryRunner.query(
       `ALTER TABLE "location" DROP CONSTRAINT "FK_92137b1457c0969fe2d20a9faff"`,
     );

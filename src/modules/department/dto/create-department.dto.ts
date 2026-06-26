@@ -1,9 +1,9 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsString, MaxLength, MinLength } from 'class-validator';
 
-/** Tạo department. `code` & `name` đều không được trùng (case-insensitive). */
+/** Create department. `code` & `name` must not be duplicated (case-insensitive). */
 export class CreateDepartmentDto {
-  @ApiProperty({ example: 'EFM', description: 'Mã duy nhất, immutable' })
+  @ApiProperty({ example: 'EFM', description: 'Unique code, immutable' })
   @IsString()
   @MinLength(1)
   @MaxLength(32)

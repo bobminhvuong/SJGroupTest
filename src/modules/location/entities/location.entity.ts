@@ -7,14 +7,14 @@ import {
   OneToMany,
 } from 'typeorm';
 import { BaseEntity } from '../../../common/entities/base.entity';
-import { Department } from '../../department/entities/department.entity';
 import { LocationType } from '../enums/location-type.enum';
 
 /**
  * Node in the location tree (adjacency list via a parent_id self-reference).
  *
- * - Bookable node (ROOM) has all of: department_id, capacity, open_from/open_to/open_days.
- * - Structural node (BUILDING/FLOOR/OTHER) leaves those columns NULL -> not bookable.
+ * - Bookable node (MEETING_ROOM) has all of: capacity, open_from/open_to/open_days.
+ * - Structural node (BUILDING/FLOOR/OFFICE/OTHER) leaves those columns NULL -> not bookable.
+ * - Department is specified at booking time, not tied to location.
  * - location_number: partial unique WHERE deleted_at IS NULL (soft-delete then recreate
  *   with the same number without hitting the unique constraint).
  */
@@ -48,14 +48,7 @@ export class Location extends BaseEntity {
   @OneToMany(() => Location, (loc) => loc.parent)
   children!: Location[];
 
-  // ── Bookable attributes (NULL if the node is not a ROOM) ─────────────────────
-  @Column({ name: 'department_id', type: 'bigint', nullable: true })
-  departmentId!: string | null;
-
-  @ManyToOne(() => Department, { nullable: true, onDelete: 'RESTRICT' })
-  @JoinColumn({ name: 'department_id' })
-  department!: Department | null;
-
+  // ── Bookable attributes (NULL if the node is not a MEETING_ROOM) ─────────────────────
   @Column({ type: 'int', nullable: true })
   capacity!: number | null;
 
@@ -68,11 +61,10 @@ export class Location extends BaseEntity {
   @Column({ name: 'open_days', type: 'smallint', array: true, nullable: true })
   openDays!: number[] | null; // 1=Mon ... 7=Sun
 
-  /** Bookable when department + capacity + open time are all present (per CLAUDE.md). */
+  /** Bookable when capacity + open time are all present (per CLAUDE.md). */
   get isBookable(): boolean {
     return (
-      this.type === LocationType.ROOM &&
-      this.departmentId != null &&
+      this.type === LocationType.MEETING_ROOM &&
       this.capacity != null &&
       this.openDays != null &&
       this.openDays.length > 0

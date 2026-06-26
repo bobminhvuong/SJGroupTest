@@ -1,55 +1,55 @@
-# 05 — Backlog & Lộ trình 1 tuần
+# 05 — Backlog & 1-Week Timeline
 
-## Lộ trình theo ngày
-| Ngày | Mục tiêu |
+## Daily timeline
+| Day | Goal |
 |---|---|
-| 1–2 | Setup NestJS + TypeORM + Postgres + Redis (docker-compose). Entity Location (tree) + Department + migration + seed từ bảng mẫu. |
-| 3 | Location CRUD API + Redis cache cho GET tree + invalidate. |
-| 4–5 | Booking module + 3 rule validate + OpenTimeParser (có unit test) + Redis lock chống overlap. |
+| 1–2 | Setup NestJS + TypeORM + Postgres + Redis (docker-compose). Location (tree) + Department entities + migration + seed from sample tables. |
+| 3 | Location CRUD API + Redis cache for GET tree + invalidation. |
+| 4–5 | Booking module + 3-rule validation + OpenTimeParser (with unit tests) + Redis lock to prevent overlap. |
 | 6 | Exception filter, logging (nestjs-pino), Swagger `/docs`, README (system design + ERD). |
-| 7 | Test thủ công Postman/e2e, push GitHub, gửi link cho luc.le@coe.surbana.tech. |
+| 7 | Manual testing Postman/e2e, push to GitHub, send link to luc.le@coe.surbana.tech. |
 
-## Backlog chi tiết (theo thứ tự làm)
+## Detailed backlog (in order)
 
 ### Phase 0 — Setup
-- [ ] `nest new` + cấu trúc thư mục (xem CLAUDE.md mục 5).
+- [ ] `nest new` + directory structure (see CLAUDE.md section 5).
 - [ ] `docker-compose.yml`: Postgres + Redis.
 - [ ] `ConfigModule` + `.env.example`.
 - [ ] TypeORM datasource + migration setup.
 
 ### Phase 1 — Domain & Data
 - [ ] Entity `Department`, `Location` (self-ref), `Booking`.
-- [ ] Migration đầu tiên.
-- [ ] Seed script từ bảng dữ liệu mẫu (chuẩn hoá open_time_rule).
+- [ ] First migration.
+- [ ] Seed script from sample data table (normalize open_time_rule).
 
 ### Phase 2 — Location
 - [ ] DTO create/update + ValidationPipe.
-- [ ] CRUD service + recursive CTE build tree.
-- [ ] Redis cache GET tree + invalidate khi mutate.
+- [ ] CRUD service + recursive CTE to build tree.
+- [ ] Redis cache GET tree + invalidate on mutate.
 - [ ] Controller + Swagger.
 
 ### Phase 3 — Booking
-- [ ] `OpenTimeParser` + unit test (MON-FRI, MON-SAT, MON-SUN, ALWAYS, edge giờ).
-- [ ] BookingService: rule department / capacity / time.
+- [ ] `OpenTimeParser` + unit tests (MON-FRI, MON-SAT, MON-SUN, ALWAYS, time edge cases).
+- [ ] BookingService: department / capacity / time rules.
 - [ ] Overlap query + Redis lock.
-- [ ] `BookingValidationException` + thông điệp rõ ràng.
+- [ ] `BookingValidationException` + clear messages.
 - [ ] Controller + Swagger.
 
-### Phase 4 — Chất lượng
-- [ ] Global `HttpExceptionFilter` (response thống nhất).
-- [ ] Logging qua `nestjs-pino` (pinoHttp autoLogging request) + log lý do reject trong BookingService.
-- [ ] README: system design, ERD, hướng dẫn chạy.
-- [ ] Postman collection / e2e test cho happy + edge cases.
+### Phase 4 — Quality
+- [ ] Global `HttpExceptionFilter` (unified response).
+- [ ] Logging via `nestjs-pino` (pinoHttp auto-logs requests) + log rejection reason in BookingService.
+- [ ] README: system design, ERD, run instructions.
+- [ ] Postman collection / e2e tests for happy + edge cases.
 
-## Edge cases cần test booking
-- Đặt cuối tuần cho room MON-FRI → reject.
-- attendees = capacity (hợp lệ), attendees = capacity+1 (reject).
-- Sai department → reject.
-- Đặt node không bookable (Lobby/Corridor) → reject.
-- 2 request trùng giờ đồng thời → 1 thành công, 1 reject (lock).
-- start_time >= end_time → reject (validate DTO).
+## Booking test edge cases
+- Weekend booking for MON-FRI room → reject.
+- attendees = capacity (valid), attendees = capacity+1 (reject).
+- Wrong department → reject.
+- Book non-bookable node (Lobby/Corridor) → reject.
+- 2 concurrent requests same time → 1 succeeds, 1 rejected (lock).
+- start_time >= end_time → reject (DTO validation).
 
-## Rủi ro & lưu ý
-- Múi giờ: thống nhất lưu `timestamptz`, parse open time theo giờ địa phương room.
-- Xoá location có booking đang active: cần quyết định chặn hay cascade.
-- Release lock nhầm: dùng token + Lua script.
+## Risks & notes
+- Timezones: consistently store `timestamptz`, parse open time by room's local timezone.
+- Deleting location with active bookings: decide whether to block or cascade.
+- Accidental lock release: use token + Lua script.

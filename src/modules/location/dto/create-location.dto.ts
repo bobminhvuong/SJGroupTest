@@ -19,8 +19,11 @@ const toIdString = ({ value }: { value: unknown }): unknown =>
     : value;
 
 /**
- * Create a location node. A bookable node (ROOM) also needs department/capacity/
- * openTimeRule; structural nodes (BUILDING/FLOOR/OTHER) ignore those (service sets NULL).
+ * Create a location node. A bookable node (MEETING_ROOM) also needs capacity/
+ * openTimeRule; structural nodes (BUILDING/FLOOR/OFFICE/OTHER) ignore those (service sets NULL).
+ * 
+ * NOTE: Department is specified per booking, NOT per location. 
+ * A room can be booked by any department.
  */
 export class CreateLocationDto {
   @ApiProperty({ example: 'Meeting Room 1' })
@@ -46,16 +49,7 @@ export class CreateLocationDto {
   @IsNumberString()
   parentId?: string | null;
 
-  @ApiPropertyOptional({
-    example: '3',
-    description: 'department id (bigint); required for ROOM',
-  })
-  @IsOptional()
-  @Transform(toIdString)
-  @IsNumberString()
-  departmentId?: string | null;
-
-  @ApiPropertyOptional({ example: 10, description: 'Required for ROOM' })
+  @ApiPropertyOptional({ example: 10, description: 'Required for MEETING_ROOM' })
   @IsOptional()
   @IsInt()
   @Min(1)
@@ -64,7 +58,7 @@ export class CreateLocationDto {
 
   @ApiPropertyOptional({
     example: 'MON-FRI:09:00-18:00',
-    description: 'Syntax "DAY-DAY:HH:mm-HH:mm" or "ALWAYS". Required for ROOM.',
+    description: 'Syntax "DAY-DAY:HH:mm-HH:mm" or "ALWAYS". Required for MEETING_ROOM.',
   })
   @IsOptional()
   @IsString()

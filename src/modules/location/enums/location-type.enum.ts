@@ -1,10 +1,11 @@
 /**
- * Node type in the location tree. Only ROOM is bookable; BUILDING/FLOOR/OTHER are
+ * Node type in the location tree. Only MEETING_ROOM is bookable; BUILDING/FLOOR/OTHER are
  * structural nodes (department/capacity/open* = NULL).
  */
 export enum LocationType {
   BUILDING = 'BUILDING',
   FLOOR = 'FLOOR',
-  ROOM = 'ROOM',
+  OFFICE = 'OFFICE',
+  MEETING_ROOM = 'MEETING_ROOM',
   OTHER = 'OTHER',
 }

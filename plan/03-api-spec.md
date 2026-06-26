@@ -1,13 +1,13 @@
-# 03 — Đặc tả API
+# 03 — API Specification
 
-Base URL: `/api/v1`. Tất cả response lỗi theo format thống nhất:
+Base URL: `/api/v1`. All error responses follow unified format:
 ```json
 { "statusCode": 400, "message": "...", "error": "Bad Request", "timestamp": "...", "path": "..." }
 ```
 
 ## Location
 
-### `POST /locations` — tạo node
+### `POST /locations` — Create node
 Body:
 ```json
 {
@@ -20,46 +20,46 @@ Body:
   "openTimeRule": "MON-FRI:09:00-18:00"
 }
 ```
-- `parentId` null → node gốc (BUILDING).
-- Node cấu trúc (FLOOR/OTHER) bỏ qua department/capacity/openTimeRule.
+- `parentId` null → root node (BUILDING).
+- Structural nodes (FLOOR/OTHER) ignore department/capacity/openTimeRule.
 
-### `GET /locations/tree` — lấy cây
-- Query optional: `?buildingId=` hoặc `?rootId=`.
-- Trả JSON cây lồng nhau `children[]`. **Có cache Redis.**
+### `GET /locations/tree` — Get tree
+- Optional query: `?buildingId=` or `?rootId=`.
+- Returns nested JSON tree `children[]`. **Cached in Redis.**
 
-### `GET /locations/:id` — chi tiết 1 node (kèm con trực tiếp).
+### `GET /locations/:id` — Get node details (with direct children).
 
-### `PATCH /locations/:id` — cập nhật (capacity, openTimeRule, name, ...). → invalidate cache.
+### `PATCH /locations/:id` — Update (capacity, openTimeRule, name, ...). → invalidate cache.
 
-### `DELETE /locations/:id` — xoá node.
-- Node có con: chặn (409) hoặc cascade (theo quyết định) → invalidate cache.
+### `DELETE /locations/:id` — Delete node.
+- Node with children: block (409) or cascade (per decision) → invalidate cache.
 
 ## Booking
 
-### `POST /bookings` — tạo booking (validate 3 rule + overlap)
+### `POST /bookings` — Create booking (validate 3 rules + overlap)
 Body:
 ```json
 {
   "locationId": "<uuid room>",
-  "departmentId": "<uuid department người đặt>",
+  "departmentId": "<uuid department of booker>",
   "attendees": 8,
   "startTime": "2026-06-26T10:00:00+07:00",
   "endTime": "2026-06-26T11:00:00+07:00"
 }
 ```
-Phản hồi lỗi (ví dụ):
-| Lý do | HTTP | message |
+Error responses (examples):
+| Reason | HTTP | message |
 |---|---|---|
-| Room không tồn tại | 404 | Location not found |
-| Không bookable | 400 | Location is not bookable |
-| Sai department | 400 | Department does not match room's department |
-| Quá capacity | 400 | Attendees (12) exceed room capacity (10) |
-| Ngoài open time | 400 | Booking time is outside room open hours (MON-FRI 09:00-18:00) |
-| Trùng giờ | 409 | Time slot already booked |
+| Room not found | 404 | Location not found |
+| Not bookable | 400 | Location is not bookable |
+| Wrong department | 400 | Department does not match room's department |
+| Exceeds capacity | 400 | Attendees (12) exceed room capacity (10) |
+| Outside open time | 400 | Booking time is outside room open hours (MON-FRI 09:00-18:00) |
+| Time slot taken | 409 | Time slot already booked |
 
-### `GET /bookings/:id` — chi tiết booking.
-### `GET /bookings?locationId=&date=` — danh sách booking theo room/ngày.
-### `DELETE /bookings/:id` (hoặc `PATCH .../cancel`) — huỷ booking → status CANCELLED.
+### `GET /bookings/:id` — Get booking details.
+### `GET /bookings?locationId=&date=` — List bookings by room/date.
+### `DELETE /bookings/:id` (or `PATCH .../cancel`) — Cancel booking → status CANCELLED.
 
 ## Swagger
-- Bật tại `/docs` qua `@nestjs/swagger`, decorate DTO bằng `@ApiProperty`.
+- Enabled at `/docs` via `@nestjs/swagger`, decorate DTOs with `@ApiProperty`.

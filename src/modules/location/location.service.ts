@@ -13,7 +13,6 @@ import {
   formatOpenTimeRule,
   parseOpenTimeRule,
 } from '../../common/open-time/open-time';
-import { Department } from '../department/entities/department.entity';
 import { CreateLocationDto } from './dto/create-location.dto';
 import { UpdateLocationDto } from './dto/update-location.dto';
 import { Location } from './entities/location.entity';
@@ -26,7 +25,6 @@ export interface LocationNode {
   locationNumber: string;
   type: LocationType;
   parentId: string | null;
-  departmentId: string | null;
   capacity: number | null;
   openTimeRule: string | null;
   isBookable: boolean;
@@ -40,8 +38,6 @@ export class LocationService {
   constructor(
     @InjectRepository(Location)
     private readonly locationRepo: Repository<Location>,
-    @InjectRepository(Department)
-    private readonly departmentRepo: Repository<Department>,
     private readonly cache: CacheService,
   ) {}
 
@@ -70,8 +66,8 @@ export class LocationService {
   }
 
   // ── READ ────────────────────────────────────────────────────────────────────
-  /** Nested tree (cached). rootId null = all root Buildings. */
-  async getTree(rootId?: string): Promise<LocationNode[]> {
+  /** Nested tree (cached). rootId null = all root Buildings. Optional type filter. */
+  async getTree(rootId?: string, type?: string): Promise<LocationNode[]> {
     if (rootId) {
       const exists = await this.locationRepo.findOne({ where: { id: rootId } });
       if (!exists) throw new NotFoundException('Root location not found');
@@ -79,8 +75,8 @@ export class LocationService {
 
     return this.cache.remember(
       'LOCATION_TREE',
-      { rootId: rootId ?? null },
-      () => this.buildTree(rootId),
+      { rootId: rootId ?? null, type: type ?? null },
+      () => this.buildTree(rootId, type),
     );
   }
 
@@ -107,6 +103,40 @@ export class LocationService {
     return node;
   }
 
+  /** List parent locations (nodes with parent_id IS NULL only) with pagination. */
+  async listParents(query: {
+    page: number;
+    limit: number;
+    type?: string;
+  }): Promise<{ data: LocationNode[]; total: number }> {
+    const { page, limit, type } = query;
+    const skip = (page - 1) * limit;
+
+    const qb = this.locationRepo
+      .createQueryBuilder('l')
+      .where('l.deleted_at IS NULL')
+      .andWhere('l.parent_id IS NULL');
+
+    // Filter by type if provided (BUILDING, FLOOR, MEETING_ROOM, etc.)
+    if (type) {
+      qb.andWhere('l.type = :type', { type });
+    }
+
+    // Get total count
+    const total = await qb.getCount();
+
+    // Get paginated results
+    const parents = await qb
+      .orderBy('l.location_number', 'ASC')
+      .skip(skip)
+      .take(limit)
+      .getMany();
+
+    const data = parents.map((loc) => this.toNode(loc));
+
+    return { data, total };
+  }
+
   // ── UPDATE ──────────────────────────────────────────────────────────────────
   async update(id: string, dto: UpdateLocationDto): Promise<Location> {
     const node = await this.locationRepo.findOne({ where: { id } });
@@ -128,7 +158,6 @@ export class LocationService {
     // On any bookable-attribute change or type change -> recompute the columns.
     if (
       dto.type !== undefined ||
-      dto.departmentId !== undefined ||
       dto.capacity !== undefined ||
       dto.openTimeRule !== undefined
     ) {
@@ -169,15 +198,14 @@ export class LocationService {
     }
   }
 
-  /** Fill/clear bookable columns by type. ROOM requires all; otherwise -> NULL. */
+  /** Fill/clear bookable columns by type. MEETING_ROOM requires capacity + open time; otherwise -> NULL. */
   private async applyBookableFields(
     entity: Location,
     dto: CreateLocationDto | UpdateLocationDto,
     type: LocationType,
     isUpdate = false,
   ): Promise<void> {
-    if (type !== LocationType.ROOM) {
-      entity.departmentId = null;
+    if (type !== LocationType.MEETING_ROOM) {
       entity.capacity = null;
       entity.openFrom = null;
       entity.openTo = null;
@@ -185,22 +213,12 @@ export class LocationService {
       return;
     }
 
-    // ROOM: take the new value (update) or fall back to the existing one.
-    const departmentId =
-      dto.departmentId ?? (isUpdate ? entity.departmentId : null);
+    // MEETING_ROOM: take the new value (update) or fall back to the existing one.
     const capacity = dto.capacity ?? (isUpdate ? entity.capacity : null);
 
-    if (!departmentId)
-      throw new BadRequestException('ROOM requires departmentId');
     if (capacity == null)
-      throw new BadRequestException('ROOM requires capacity');
+      throw new BadRequestException('MEETING_ROOM requires capacity');
 
-    const dept = await this.departmentRepo.findOne({
-      where: { id: departmentId },
-    });
-    if (!dept) throw new NotFoundException('Department not found');
-
-    entity.departmentId = departmentId;
     entity.capacity = capacity;
 
     if (dto.openTimeRule !== undefined && dto.openTimeRule !== null) {
@@ -241,20 +259,25 @@ export class LocationService {
     }
   }
 
-  /** Fetch the subtree (recursive CTE) then assemble it into a nested tree. */
-  private async buildTree(rootId?: string): Promise<LocationNode[]> {
+  /** Fetch the subtree (recursive CTE) then assemble it into a nested tree. Optional type filter. */
+  private async buildTree(rootId?: string, type?: string): Promise<LocationNode[]> {
+    const typeFilter = type ? ` AND type = $2::text` : '';
+    const params = [rootId ?? null, type ?? null].filter((v, i) => i === 0 || type);
+
     const rows: Array<Record<string, unknown>> = await this.locationRepo.query(
       `WITH RECURSIVE subtree AS (
          SELECT * FROM location
          WHERE deleted_at IS NULL
            AND ( ($1::bigint IS NULL AND parent_id IS NULL) OR id = $1::bigint )
+           ${typeFilter}
          UNION ALL
          SELECT c.* FROM location c
          JOIN subtree s ON c.parent_id = s.id
          WHERE c.deleted_at IS NULL
+           ${typeFilter}
        )
        SELECT * FROM subtree ORDER BY location_number`,
-      [rootId ?? null],
+      params,
     );
 
     const nodes = new Map<string, LocationNode>();
@@ -280,7 +303,6 @@ export class LocationService {
       locationNumber: loc.locationNumber,
       type: loc.type,
       parentId: loc.parentId,
-      departmentId: loc.departmentId,
       capacity: loc.capacity,
       openTimeRule: formatOpenTimeRule({
         openDays: loc.openDays ?? [],
@@ -298,7 +320,6 @@ export class LocationService {
     const openFrom = (row.open_from as string | null) ?? undefined;
     const openTo = (row.open_to as string | null) ?? undefined;
     const type = row.type as LocationType;
-    const departmentId = (row.department_id as string | null) ?? null;
     const capacity = (row.capacity as number | null) ?? null;
     return {
       id: row.id as string,
@@ -306,12 +327,10 @@ export class LocationService {
       locationNumber: row.location_number as string,
       type,
       parentId: (row.parent_id as string | null) ?? null,
-      departmentId,
       capacity,
       openTimeRule: formatOpenTimeRule({ openDays, openFrom, openTo }),
       isBookable:
-        type === LocationType.ROOM &&
-        departmentId != null &&
+        type === LocationType.MEETING_ROOM &&
         capacity != null &&
         openDays.length > 0,
       children: [],

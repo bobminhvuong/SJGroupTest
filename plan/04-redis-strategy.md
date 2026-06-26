@@ -1,86 +1,86 @@
-# 04 — Chiến lược Redis
+# 04 — Redis Strategy
 
-Redis làm **2 việc** (không nhồi quá nhiều): cache (đọc nhiều, ghi ít) + distributed lock chống double-booking. Triển khai trực tiếp bằng **ioredis** (không dùng `@nestjs/cache-manager`) để linh hoạt cho tag-invalidation + stampede protection.
+Redis does **2 things** (no overloading): cache (read-heavy, write-light) + distributed lock to prevent double-booking. Implemented directly with **ioredis** (not `@nestjs/cache-manager`) for flexibility with tag-invalidation + stampede protection.
 
-## Tổ chức code (đã triển khai)
+## Code organization (already implemented)
 ```
 src/shared/redis/
-  redis.module.ts    # @Global() — cấp RedisService 1 lần
+  redis.module.ts    # @Global() — provides RedisService once
   redis.service.ts   # logic: get/set/delete, setTagged/invalidateTag, remember, lock
   cache-keys.ts      # DATA: CACHE_MODULES (registry) + LockKey + LockTtl
 ```
 
-### `cache-keys.ts` — nơi duy nhất khai báo cache
-Mỗi module = 1 tuple `[prefix, tags, ttl]` (named tuple → IDE gợi ý), `getCacheConfig()` destructure ra object:
+### `cache-keys.ts` — single source for cache declaration
+Each module = 1 tuple `[prefix, tags, ttl]` (named tuple → IDE hints), `getCacheConfig()` destructures to object:
 ```ts
 export const CACHE_MODULES = {
   LOCATION_TREE: ['location:tree', ['location'], 600],
 } satisfies Record<string, CacheTuple>;
 ```
-KHÔNG hardcode key/ttl trong service — luôn lấy qua `getCacheConfig(name)`.
+Don't hardcode key/ttl in service — always fetch via `getCacheConfig(name)`.
 
-## a) Cache (read-through + chống stampede) — `remember()`
-Thay vì tự viết get/set rải rác, service gọi 1 hàm:
+## a) Cache (read-through + prevent stampede) — `remember()`
+Instead of scattered get/set calls, service calls one function:
 ```ts
 const tree = await redis.remember('LOCATION_TREE', { scope: 'full' }, () =>
-  this.buildTreeFromDb(),   // callback chỉ chạy khi cache miss
+  this.buildTreeFromDb(),   // callback only runs on cache miss
 );
 ```
-**Luồng `remember()`:**
-1. Build key từ `prefix + hash(params)` → `get`. Hit → trả luôn.
-2. Miss → `SET lock:rebuild:{key} NX EX 10` (chỉ 1 process rebuild).
-3. Process khác đợi tối đa ~500ms (10×50ms) để đọc lại cache (chống **cache stampede** đập DB).
-4. Process giữ lock chạy callback → `setTagged(key, value, ttl, tags)`. **Không cache null**.
-5. Release lock rebuild.
+**`remember()` flow:**
+1. Build key from `prefix + hash(params)` → `get`. Hit → return immediately.
+2. Miss → `SET lock:rebuild:{key} NX EX 10` (only one process rebuilds).
+3. Other processes wait max ~500ms (10×50ms) to re-read cache (prevents **cache stampede** pounding DB).
+4. Lock-holding process runs callback → `setTagged(key, value, ttl, tags)`. **Don't cache null**.
+5. Release rebuild lock.
 
-| Mục | Giá trị |
+| Item | Value |
 |---|---|
-| Key | `location:tree:{hash(params)}` (qua `CACHE_MODULES.LOCATION_TREE`) |
-| TTL | 600s (khai báo trong registry) |
+| Key | `location:tree:{hash(params)}` (via `CACHE_MODULES.LOCATION_TREE`) |
+| TTL | 600s (declared in registry) |
 | Tag | `location` |
 
-## Invalidation theo TAG (không dùng `KEYS pattern`)
-- `setTagged` lưu value + `SADD tag:{tag} {key}` → mỗi tag là 1 Redis SET chứa danh sách key.
-- Khi Create/Update/Delete location → `invalidateTag('location')`: `SMEMBERS` lấy keys → `DEL` hết + xoá tag-set.
-- **Vì sao không `KEYS location:tree:*`**: `KEYS` quét toàn bộ keyspace, O(N), block Redis ở production. Tag-set invalidate chính xác và không block.
+## TAG-based invalidation (not pattern `KEYS`)
+- `setTagged` stores value + `SADD tag:{tag} {key}` → each tag is a Redis SET of keys.
+- On location Create/Update/Delete → `invalidateTag('location')`: `SMEMBERS` get keys → `DEL` all + remove tag-set.
+- **Why not `KEYS location:tree:*`**: `KEYS` scans entire keyspace, O(N), blocks Redis in production. Tag-set invalidation is precise and non-blocking.
 
-## b) Distributed lock chống double-booking
-**Vấn đề thật**: 2 request đặt cùng room, cùng giờ, gần như đồng thời → chỉ check application-layer (SELECT rồi INSERT) sẽ race condition.
+## b) Distributed lock to prevent double-booking
+**Real problem**: 2 requests book same room, same time, nearly concurrent → app-layer check alone (SELECT then INSERT) causes race condition.
 
-| Mục | Giá trị |
+| Item | Value |
 |---|---|
 | Key | `LockKey.booking(locationId, dateISO)` → `lock:booking:{locationId}:{date}` |
-| TTL | `LockTtl.bookingMs` (env `BOOKING_LOCK_TTL_MS`, mặc định 5000) |
-| Lệnh | `SET key <token> NX PX <ttl>` (token = uuid) |
-| Release | Lua script so khớp token (không release nhầm lock process khác) |
+| TTL | `LockTtl.bookingMs` (env `BOOKING_LOCK_TTL_MS`, default 5000) |
+| Command | `SET key <token> NX PX <ttl>` (token = uuid) |
+| Release | Lua script checks token match (don't accidentally release another process's lock) |
 
 **Flow:**
 ```
-1. token = acquireLock(key, ttlMs). Nếu null → 409 (đang xử lý request khác).
-2. trong lock: query overlap ở Postgres (lock KHÔNG thay check DB).
-3. nếu hợp lệ → INSERT booking (transaction).
+1. token = acquireLock(key, ttlMs). If null → 409 (another request in progress).
+2. within lock: query overlap in Postgres (lock does NOT replace DB check).
+3. if valid → INSERT booking (transaction).
 4. releaseLock(key, token).
 ```
-> Lock chỉ chống **concurrent request**, không thay transaction. Vẫn phải query overlap trong DB.
+> Lock only prevents **concurrent requests**, doesn't replace transaction. Must still query overlap in DB.
 
-## RedisService (đã triển khai)
+## RedisService (already implemented)
 ```ts
 class RedisService {
-  // cache cơ bản
+  // basic cache
   get<T>(key): Promise<T | null>
   set(key, value, ttlSec): Promise<void>
   delete(...keys): Promise<void>
-  // cache theo tag
+  // tag-based cache
   setTagged(key, value, ttlSec, tags[]): Promise<void>
   invalidateTag(tag): Promise<void>
-  // read-through + chống stampede
+  // read-through + prevent stampede
   remember<T>(moduleName, params, callback, tenantId?): Promise<T>
-  // khoá nghiệp vụ (booking)
-  acquireLock(key, ttlMs): Promise<string | null>   // trả token
-  releaseLock(key, token): Promise<void>             // Lua so khớp token
+  // business lock (booking)
+  acquireLock(key, ttlMs): Promise<string | null>   // returns token
+  releaseLock(key, token): Promise<void>             // Lua checks token match
 }
 ```
 
-## Phương án thay thế / bổ trợ
-- Postgres transaction + `SELECT ... FOR UPDATE`, hoặc exclusion constraint (`tstzrange` + `EXCLUDE USING gist`).
-- Đề yêu cầu **kết hợp Redis** nên dùng lock layer là hợp lý; có thể kết hợp Redis lock + DB constraint để chắc chắn.
+## Alternative/complementary approaches
+- Postgres transaction + `SELECT ... FOR UPDATE`, or exclusion constraint (`tstzrange` + `EXCLUDE USING gist`).
+- Assignment requires **combining Redis**, so lock layer makes sense; can combine Redis lock + DB constraint for certainty.

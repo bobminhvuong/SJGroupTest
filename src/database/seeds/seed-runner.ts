@@ -58,9 +58,6 @@ export async function seedDatabase(
         locationNumber: seed.locationNumber,
         type: seed.type as LocationType,
         parentId: parent?.id ?? null,
-        departmentId: seed.departmentCode
-          ? (deptByCode.get(seed.departmentCode)?.id ?? null)
-          : null,
         capacity: seed.capacity,
         openFrom: seed.openFrom,
         openTo: seed.openTo,

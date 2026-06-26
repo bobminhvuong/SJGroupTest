@@ -11,6 +11,7 @@ import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { ParseIdPipe } from '../../common/pipes/parse-id.pipe';
 import { BookingService } from './booking.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
+import { ListBookingDto } from './dto/list-booking.dto';
 
 @ApiTags('bookings')
 @Controller('bookings')
@@ -19,31 +20,31 @@ export class BookingController {
 
   @Post()
   @ApiOperation({
-    summary: 'Tạo booking (validate department/capacity/time + overlap)',
+    summary: 'Create booking (validate: department exists + capacity + time + no overlap)',
   })
   create(@Body() dto: CreateBookingDto) {
     return this.bookingService.create(dto);
   }
 
   @Get()
-  @ApiOperation({ summary: 'Danh sách booking theo room/ngày' })
-  @ApiQuery({ name: 'locationId', required: false })
-  @ApiQuery({ name: 'date', required: false, example: '2026-06-26' })
-  findMany(
-    @Query('locationId') locationId?: string,
-    @Query('date') date?: string,
-  ) {
-    return this.bookingService.findMany(locationId, date);
+  @ApiOperation({ summary: 'List bookings (filter by room/date/status, paginated)' })
+  @ApiQuery({ name: 'locationId', required: false, description: 'Filter by room id' })
+  @ApiQuery({ name: 'departmentId', required: false, description: 'Filter by department id' })
+  @ApiQuery({ name: 'status', required: false, description: 'Filter by booking status (CONFIRMED, CANCELLED)' })
+  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Page number (default 1)' })
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Items per page (default 20)' })
+  findMany(@Query() dto: ListBookingDto) {
+    return this.bookingService.findMany(dto);
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Chi tiết booking' })
+  @ApiOperation({ summary: 'Get booking details' })
   findOne(@Param('id', ParseIdPipe) id: string) {
     return this.bookingService.findOne(id);
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Huỷ booking (status CANCELLED)' })
+  @ApiOperation({ summary: 'Cancel booking (status CANCELLED)' })
   cancel(@Param('id', ParseIdPipe) id: string) {
     return this.bookingService.cancel(id);
   }

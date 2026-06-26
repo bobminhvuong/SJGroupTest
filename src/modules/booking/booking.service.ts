@@ -15,7 +15,10 @@ import {
 } from '../../common/open-time/open-time';
 import { Location } from '../location/entities/location.entity';
 import { LocationService } from '../location/location.service';
+import { Department } from '../department/entities/department.entity';
+import { PagedResult } from '../../common/dto/paged-result';
 import { CreateBookingDto } from './dto/create-booking.dto';
+import { ListBookingDto } from './dto/list-booking.dto';
 import { Booking } from './entities/booking.entity';
 import { BookingStatus } from './enums/booking-status.enum';
 
@@ -26,20 +29,21 @@ export class BookingService {
   constructor(
     @InjectRepository(Booking)
     private readonly bookingRepo: Repository<Booking>,
+    @InjectRepository(Department)
+    private readonly departmentRepo: Repository<Department>,
     private readonly locationService: LocationService,
     private readonly lock: LockService,
   ) {}
 
-  // ── CREATE (validate 3 rule + overlap) ────────────────────────────────────────
+  // ── CREATE (validate 3 rules + overlap) ────────────────────────────────────────
   async create(dto: CreateBookingDto): Promise<Booking> {
     const room = await this.locationService.getEntityOrFail(dto.locationId);
-
-    this.assertBusinessRules(room, dto);
+    await this.assertBusinessRules(room, dto);
 
     const start = new Date(dto.startTime);
     const end = new Date(dto.endTime);
 
-    // ── Overlap: lock per room + day to prevent concurrent double-booking ─────────
+    // ── Overlap: lock per room + day to prevent concurrent double-booking ──────────
     const lockKey = LockKey.booking(room.id, dto.startTime.slice(0, 10));
     const token = await this.lock.acquireLock(lockKey, LockTtl.bookingMs);
     if (!token) {
@@ -73,18 +77,25 @@ export class BookingService {
     }
   }
 
-  // ── READ ──────────────────────────────────────────────────────────────────────
+  // ── READ ───────────────────────────────────────────────────────────────────────
   async findOne(id: string): Promise<Booking> {
-    const booking = await this.bookingRepo.findOne({ where: { id } });
+    const booking = await this.bookingRepo.findOne({
+      where: { id },
+      relations: { location: true, department: true },
+    });
     if (!booking) throw new NotFoundException('Booking not found');
     return booking;
   }
 
-  /** List bookings by room (+ optional day "YYYY-MM-DD"). */
-  async findMany(locationId?: string, date?: string): Promise<Booking[]> {
+  /** List bookings with filters and pagination. */
+  async findMany(dto: ListBookingDto): Promise<PagedResult<Booking>> {
+    const { page, limit, locationId, date, status } = dto;
     const qb = this.bookingRepo
       .createQueryBuilder('b')
+      .leftJoinAndSelect('b.location', 'location')
+      .leftJoinAndSelect('b.department', 'department')
       .orderBy('b.start_time', 'ASC');
+
     if (locationId) qb.andWhere('b.location_id = :locationId', { locationId });
     if (date) {
       qb.andWhere('b.start_time >= :from AND b.start_time < :to', {
@@ -92,10 +103,17 @@ export class BookingService {
         to: `${date}T23:59:59.999`,
       });
     }
-    return qb.getMany();
+    if (status) qb.andWhere('b.status = :status', { status });
+
+    const [data, total] = await qb
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+
+    return new PagedResult(data, total, page, limit);
   }
 
-  // ── CANCEL (soft) ───────────────────────────────────────────────────────────
+  // ── CANCEL (soft) ────────────────────────────────────────────────────────────
   async cancel(id: string): Promise<Booking> {
     const booking = await this.findOne(id);
     if (booking.status === BookingStatus.CANCELLED) return booking;
@@ -106,8 +124,8 @@ export class BookingService {
     return saved;
   }
 
-  // ── Rule helpers ──────────────────────────────────────────────────────────────
-  private assertBusinessRules(room: Location, dto: CreateBookingDto): void {
+  // ── Rule helpers ───────────────────────────────────────────────────────────────
+  private async assertBusinessRules(room: Location, dto: CreateBookingDto): Promise<void> {
     // 0) DTO-level: start < end
     if (new Date(dto.startTime) >= new Date(dto.endTime)) {
       this.reject(dto, 'startTime is not before endTime');
@@ -120,12 +138,17 @@ export class BookingService {
       throw new BookingValidationException('Location is not bookable');
     }
 
-    // 1) Department matching
-    if (room.departmentId !== dto.departmentId) {
-      this.reject(dto, 'department mismatch');
-      throw new BookingValidationException(
-        "Department does not match room's department",
-      );
+    // 1) Department must be valid (exists in DB)
+    if (!dto.departmentId) {
+      this.reject(dto, 'departmentId is required');
+      throw new BookingValidationException('Department is required');
+    }
+    const dept = await this.departmentRepo.findOne({
+      where: { id: dto.departmentId },
+    });
+    if (!dept) {
+      this.reject(dto, 'departmentId does not exist');
+      throw new BookingValidationException('Department not found');
     }
 
     // 2) Capacity
@@ -158,7 +181,7 @@ export class BookingService {
     }
   }
 
-  /** A CONFIRMED, non-deleted booking overlapping [start,end) on the same room. */
+  /** Find a CONFIRMED, non-deleted booking overlapping [start,end) on the same room. */
   private async findOverlap(
     locationId: string,
     start: Date,
@@ -172,7 +195,7 @@ export class BookingService {
       .getOne();
   }
 
-  /** Log thống nhất lý do từ chối booking (yêu cầu phi chức năng: log reject). */
+  /** Unified logging for booking rejection reason (non-functional requirement: log reject). */
   private reject(dto: CreateBookingDto, reason: string): void {
     this.logger.warn(
       `Booking REJECTED room=${dto.locationId} dept=${dto.departmentId} ` +

@@ -1,13 +1,13 @@
-# 01 — Kiến trúc hệ thống
+# 01 — System Architecture
 
-## Phong cách: Layered Architecture (NestJS)
+## Style: Layered Architecture (NestJS)
 
 ```
             ┌─────────────────────────────────────────────┐
  Client ───▶│  Controller  (route, DTO validation)         │
             │      │                                        │
             │      ▼                                        │
-            │   Service   (business logic, 3 rule, lock)    │
+            │   Service   (business logic, 3 rules, lock)   │
             │      │                                        │
             │      ▼                                        │
             │  Repository (TypeORM, recursive CTE)          │
@@ -18,40 +18,40 @@
 ```
 
 ## Module map (NestJS)
-- **LocationModule** (`modules/location`) — CRUD cây location, cache tree qua `remember()`.
-- **BookingModule** (`modules/booking`) — tạo/đọc/huỷ booking, validate 3 rule + overlap lock.
-- **DepartmentModule** (`modules/department`) — danh mục department (EFM, FSS, AVS, ASS, ...).
+- **LocationModule** (`modules/location`) — CRUD location tree, cache tree via `remember()`.
+- **BookingModule** (`modules/booking`) — create/read/cancel booking, validate 3 rules + overlap lock.
+- **DepartmentModule** (`modules/department`) — department catalog (EFM, FSS, AVS, ASS, ...).
 - **RedisModule** (`shared/redis`, `@Global`) — ioredis + `RedisService` (cache/tag/remember + lock) + `cache-keys.ts` registry.
 - **ConfigModule** — env (DB, Redis).
-- `common/` — **không phải module**, chỉ là class thuần: `BaseEntity`, `HttpExceptionFilter`, `BookingValidationException`.
-- `config/`, `database/` — TypeORM runtime config + DataSource/migration/seed cho CLI.
+- `common/` — **not a module**, just plain classes: `BaseEntity`, `HttpExceptionFilter`, `BookingValidationException`.
+- `config/`, `database/` — TypeORM runtime config + DataSource/migration/seed for CLI.
 
 ## Cross-cutting concerns
-| Concern | Triển khai |
+| Concern | Implementation |
 |---|---|
-| Validation | `ValidationPipe` global + DTO class-validator |
-| Exception | `HttpExceptionFilter` global → response thống nhất |
-| Logging | `nestjs-pino` (pinoHttp autoLogging request) + log lý do reject ở service |
+| Validation | Global `ValidationPipe` + DTO class-validator |
+| Exception | Global `HttpExceptionFilter` → unified response |
+| Logging | `nestjs-pino` (pinoHttp auto-logs requests) + log rejection reason in service |
 | Config | `@nestjs/config` (.env) |
-| API Docs | `@nestjs/swagger` tại `/docs` |
+| API Docs | `@nestjs/swagger` at `/docs` |
 
-## Luồng tạo Booking (quan trọng nhất)
+## Booking Creation Flow (most important)
 ```
 POST /bookings
-  1. ValidationPipe kiểm DTO (định dạng, required).
+  1. ValidationPipe validates DTO (format, required fields).
   2. BookingService.create():
-     a. Load Location → kiểm tồn tại & bookable (capacity/department/open_days != null).
+     a. Load Location → verify exists & bookable (capacity/department/open_days != null).
      b. Rule 1: department matching (booking.departmentId === location.departmentId).
      c. Rule 2: attendees <= capacity.
-     d. Rule 3: time validation (so open_days/open_from/open_to, không parse string).
-     e. Acquire Redis lock  lock:booking:{locationId}:{date}  (SET NX PX).
-     f. Trong lock: query overlap ở Postgres → nếu trùng giờ → reject.
-     g. INSERT booking (trong transaction).
+     d. Rule 3: time validation (compare open_days/open_from/open_to, no string parsing).
+     e. Acquire Redis lock lock:booking:{locationId}:{date} (SET NX PX).
+     f. Within lock: query overlap in Postgres → if overlap → reject.
+     g. INSERT booking (within transaction).
      h. Release lock.
-  3. Log kết quả (accept / reject + lý do).
+  3. Log result (accept / reject + reason).
 ```
 
-## Nguyên tắc thiết kế
-- Controller mỏng, Service chứa logic, Repository chỉ truy vấn.
-- Redis lock **không thay** check DB — chỉ chống concurrent request.
-- Mọi rule reject ném `BookingValidationException` (kế thừa `BadRequestException`) với message rõ lý do.
+## Design principles
+- Thin controllers, business logic in Service, Repository for queries only.
+- Redis lock does **not replace** DB check — only prevents concurrent requests.
+- All rule rejections throw `BookingValidationException` (extends `BadRequestException`) with clear message.

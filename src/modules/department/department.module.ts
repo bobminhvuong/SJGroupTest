@@ -5,8 +5,8 @@ import { DepartmentService } from './department.service';
 import { Department } from './entities/department.entity';
 
 /**
- * Department: CRUD tối thiểu (create + list + detail). Vẫn export TypeOrmModule để
- * Location/Booking inject Repository<Department>.
+ * Department: Minimal CRUD (create + list + detail). Still exports TypeOrmModule so
+ * Location/Booking can inject Repository<Department>.
  */
 @Module({
   imports: [TypeOrmModule.forFeature([Department])],

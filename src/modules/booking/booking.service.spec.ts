@@ -6,8 +6,8 @@ import { Booking } from './entities/booking.entity';
 import { BookingStatus } from './enums/booking-status.enum';
 
 /**
- * Unit test BookingService: cô lập business rule + overlap + lock bằng mock
- * (không đụng DB/Redis thật). Phủ các edge case trong plan/05-tasks-timeline.md.
+ * Unit test BookingService: isolate business rules + overlap + lock using mocks
+ * (no real DB/Redis). Coverage of edge cases in plan/05-tasks-timeline.md.
  */
 describe('BookingService', () => {
   let service: BookingService;
@@ -17,17 +17,19 @@ describe('BookingService', () => {
     findOne: jest.Mock;
     createQueryBuilder: jest.Mock;
   };
+  let departmentRepo: {
+    findOne: jest.Mock;
+  };
   let locationService: { getEntityOrFail: jest.Mock };
   let redis: { acquireLock: jest.Mock; releaseLock: jest.Mock };
   let overlapResult: Booking | null;
 
-  /** Phòng bookable mẫu: EFM, capacity 10, MON-FRI 09:00-18:00. */
+  /** Sample bookable room: capacity 10, MON-FRI 09:00-18:00. */
   const room = (): Location =>
     ({
       id: 'room-1',
       locationNumber: 'A-01-01',
-      type: 'ROOM',
-      departmentId: 'dept-efm',
+      type: 'MEETING_ROOM',
       capacity: 10,
       openFrom: '09:00:00',
       openTo: '18:00:00',
@@ -62,6 +64,9 @@ describe('BookingService', () => {
       findOne: jest.fn(),
       createQueryBuilder: jest.fn(() => qb),
     };
+    departmentRepo = {
+      findOne: jest.fn().mockResolvedValue({ id: 'dept-efm' }),
+    };
     locationService = { getEntityOrFail: jest.fn().mockResolvedValue(room()) };
     redis = {
       acquireLock: jest.fn().mockResolvedValue('lock-token'),
@@ -70,6 +75,7 @@ describe('BookingService', () => {
 
     service = new BookingService(
       bookingRepo as never,
+      departmentRepo as never,
       locationService as never,
       redis,
     );
@@ -105,11 +111,10 @@ describe('BookingService', () => {
     );
   });
 
-  it('rejects a department mismatch', async () => {
-    const dto = { ...validDto(), departmentId: 'dept-other' };
-    await expect(service.create(dto)).rejects.toThrow(
-      "Department does not match room's department",
-    );
+  it('rejects an invalid department', async () => {
+    departmentRepo.findOne.mockResolvedValueOnce(null);
+    const dto = { ...validDto(), departmentId: 'dept-invalid' };
+    await expect(service.create(dto)).rejects.toThrow('Department not found');
     expect(redis.acquireLock).not.toHaveBeenCalled();
   });
 

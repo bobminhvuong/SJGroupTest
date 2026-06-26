@@ -6,14 +6,15 @@
  *     openFrom  : "HH:mm"
  *     openTo    : "HH:mm"
  *   "Always open" -> open all week 00:00–23:59.
- * - Structural nodes (BUILDING/FLOOR/OTHER) are not bookable: department/capacity/open* = null.
+ * - Structural nodes (BUILDING/FLOOR/OFFICE/OTHER) are not bookable: capacity/open* = null.
+ * - Department is specified per booking, not tied to location.
  * - parentNumber references the parent node's locationNumber (the runner resolves it to parent_id).
  *
  * This file is independent of the entities for easier testing & review; the seed.ts
  * runner maps it into the repository on insert.
  */
 
-export type LocationType = 'BUILDING' | 'FLOOR' | 'ROOM' | 'OTHER';
+export type LocationType = 'BUILDING' | 'FLOOR' | 'OFFICE' | 'MEETING_ROOM' | 'OTHER';
 
 export interface DepartmentSeed {
   code: string;
@@ -25,7 +26,6 @@ export interface LocationSeed {
   locationNumber: string; // unique
   parentNumber: string | null; // null = root node (Building)
   type: LocationType;
-  departmentCode: string | null;
   capacity: number | null;
   openDays: number[] | null; // 1=Mon ... 7=Sun
   openFrom: string | null; // "HH:mm"
@@ -50,7 +50,6 @@ export const LOCATION_SEED: LocationSeed[] = [
     locationNumber: 'A',
     parentNumber: null,
     type: 'BUILDING',
-    departmentCode: null,
     capacity: null,
     openDays: null,
     openFrom: null,
@@ -61,7 +60,6 @@ export const LOCATION_SEED: LocationSeed[] = [
     locationNumber: 'A-01',
     parentNumber: 'A',
     type: 'FLOOR',
-    departmentCode: null,
     capacity: null,
     openDays: null,
     openFrom: null,
@@ -72,7 +70,6 @@ export const LOCATION_SEED: LocationSeed[] = [
     locationNumber: 'A-01-Lobby',
     parentNumber: 'A-01',
     type: 'OTHER',
-    departmentCode: null,
     capacity: null,
     openDays: null,
     openFrom: null,
@@ -82,8 +79,7 @@ export const LOCATION_SEED: LocationSeed[] = [
     name: 'Meeting Room 1',
     locationNumber: 'A-01-01',
     parentNumber: 'A-01',
-    type: 'ROOM',
-    departmentCode: 'EFM',
+    type: 'MEETING_ROOM',
     capacity: 10,
     openDays: WEEKDAYS,
     openFrom: '09:00',
@@ -93,8 +89,7 @@ export const LOCATION_SEED: LocationSeed[] = [
     name: 'Meeting Room 2',
     locationNumber: 'A-01-02',
     parentNumber: 'A-01',
-    type: 'ROOM',
-    departmentCode: 'FSS',
+    type: 'MEETING_ROOM',
     capacity: 50,
     openDays: WEEKDAYS,
     openFrom: '09:00',
@@ -105,7 +100,6 @@ export const LOCATION_SEED: LocationSeed[] = [
     locationNumber: 'A-01-Corridor',
     parentNumber: 'A-01',
     type: 'OTHER',
-    departmentCode: null,
     capacity: null,
     openDays: null,
     openFrom: null,
@@ -115,8 +109,7 @@ export const LOCATION_SEED: LocationSeed[] = [
     name: 'Meeting Room 2',
     locationNumber: 'A-01-03',
     parentNumber: 'A-01',
-    type: 'ROOM',
-    departmentCode: 'AVS',
+    type: 'MEETING_ROOM',
     capacity: 5,
     openDays: MON_TO_SAT,
     openFrom: '09:00',
@@ -129,7 +122,6 @@ export const LOCATION_SEED: LocationSeed[] = [
     locationNumber: 'B',
     parentNumber: null,
     type: 'BUILDING',
-    departmentCode: null,
     capacity: null,
     openDays: null,
     openFrom: null,
@@ -140,7 +132,6 @@ export const LOCATION_SEED: LocationSeed[] = [
     locationNumber: 'B-05',
     parentNumber: 'B',
     type: 'FLOOR',
-    departmentCode: null,
     capacity: null,
     openDays: null,
     openFrom: null,
@@ -150,8 +141,7 @@ export const LOCATION_SEED: LocationSeed[] = [
     name: 'Utility Room',
     locationNumber: 'B-05-11',
     parentNumber: 'B-05',
-    type: 'ROOM',
-    departmentCode: 'ASS',
+    type: 'MEETING_ROOM',
     capacity: 30,
     openDays: ALL_WEEK,
     openFrom: '00:00',
@@ -161,8 +151,7 @@ export const LOCATION_SEED: LocationSeed[] = [
     name: 'Sanitary Room',
     locationNumber: 'B-05-12',
     parentNumber: 'B-05',
-    type: 'ROOM',
-    departmentCode: 'EFM',
+    type: 'MEETING_ROOM',
     capacity: 10,
     openDays: WEEKDAYS,
     openFrom: '09:00',
@@ -172,8 +161,7 @@ export const LOCATION_SEED: LocationSeed[] = [
     name: 'Meeting Toilet',
     locationNumber: 'B-05-13',
     parentNumber: 'B-05',
-    type: 'ROOM',
-    departmentCode: 'EFM',
+    type: 'MEETING_ROOM',
     capacity: 10,
     openDays: WEEKDAYS,
     openFrom: '09:00',
@@ -183,8 +171,7 @@ export const LOCATION_SEED: LocationSeed[] = [
     name: 'Genset Room',
     locationNumber: 'B-05-14',
     parentNumber: 'B-05',
-    type: 'ROOM',
-    departmentCode: 'ASS',
+    type: 'MEETING_ROOM',
     capacity: 100,
     openDays: ALL_WEEK,
     openFrom: '09:00',
@@ -195,7 +182,6 @@ export const LOCATION_SEED: LocationSeed[] = [
     locationNumber: 'B-05-15',
     parentNumber: 'B-05',
     type: 'OTHER',
-    departmentCode: null,
     capacity: null,
     openDays: null,
     openFrom: null,
@@ -206,7 +192,6 @@ export const LOCATION_SEED: LocationSeed[] = [
     locationNumber: 'B-05-Corridor',
     parentNumber: 'B-05',
     type: 'OTHER',
-    departmentCode: null,
     capacity: null,
     openDays: null,
     openFrom: null,

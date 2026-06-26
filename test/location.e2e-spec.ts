@@ -52,24 +52,22 @@ describe('Location (e2e)', () => {
       .expect(200);
     expect(res.body).toMatchObject({
       locationNumber: 'A-01-01',
-      type: 'ROOM',
+      type: 'MEETING_ROOM',
       isBookable: true,
       openTimeRule: 'MON-FRI:09:00-18:00',
     });
   });
 
-  it('POST /locations creates a ROOM under a floor and invalidates tree cache', async () => {
+  it('POST /locations creates a MEETING_ROOM under a floor and invalidates tree cache', async () => {
     const floorId = await locationIdByNumber(app, 'A-01');
-    const efmId = await departmentIdByCode(app, 'EFM');
 
     const created = await request(app.getHttpServer())
       .post(base)
       .send({
         name: 'Meeting Room X',
         locationNumber: 'A-01-99',
-        type: 'ROOM',
+        type: 'MEETING_ROOM',
         parentId: floorId,
-        departmentId: efmId,
         capacity: 12,
         openTimeRule: 'MON-FRI:08:00-17:00',
       })
@@ -84,17 +82,15 @@ describe('Location (e2e)', () => {
     expect(flat).toContain('A-01-99');
   });
 
-  it('rejects creating a ROOM without departmentId with 400', async () => {
+  it('rejects creating a MEETING_ROOM without capacity or openTimeRule with 400', async () => {
     const floorId = await locationIdByNumber(app, 'A-01');
     return request(app.getHttpServer())
       .post(base)
       .send({
-        name: 'Bad Room',
+        name: 'Invalid Meeting Room',
         locationNumber: 'A-01-BAD',
-        type: 'ROOM',
+        type: 'MEETING_ROOM',
         parentId: floorId,
-        capacity: 5,
-        openTimeRule: 'MON-FRI:09:00-18:00',
       })
       .expect(400);
   });

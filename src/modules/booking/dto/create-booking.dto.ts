@@ -21,7 +21,7 @@ export class CreateBookingDto {
 
   @ApiProperty({
     example: '3',
-    description: "id (bigint) of the requester's department",
+    description: 'id (bigint) of the requesting department (must exist in DB)',
   })
   @Transform(toIdString)
   @IsNumberString()

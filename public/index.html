@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Location & Booking Demo</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+  <link rel="stylesheet" href="/vendor/bootstrap.min.css" />
+  <link rel="stylesheet" href="/vendor/bootstrap-icons.min.css" />
   <style>
     body { background: #f8f9fa; }
     .nav-tabs .nav-link { color: #495057; font-weight: 500; }
@@ -66,6 +66,7 @@
         </div>
       </div>
       <div id="locList" class="row g-3"></div>
+      <div id="locPager" class="mt-3"></div>
     </div>
 
     <!-- ═══════════════ TAB 2: DEPARTMENT ═══════════════ -->
@@ -86,6 +87,7 @@
           </table>
         </div>
       </div>
+      <div id="deptPager" class="mt-3"></div>
     </div>
 
     <!-- ═══════════════ TAB 3: BOOKING ═══════════════ -->
@@ -94,7 +96,7 @@
         <div class="card-body action-bar">
           <button class="btn btn-primary btn-sm" onclick="openBookingForm()"><i class="bi bi-plus-lg me-1"></i>New Booking</button>
           <button class="btn btn-outline-secondary btn-sm" onclick="loadBookings()"><i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>
-          <select id="bkgLocFilter" class="form-select form-select-sm ms-auto" style="max-width:220px" onchange="loadBookings()"><option value="">All Rooms</option></select>
+          <select id="bkgLocFilter" class="form-select form-select-sm ms-auto" style="max-width:220px" onchange="loadBookings(1)"><option value="">All Rooms</option></select>
         </div>
       </div>
       <div class="card">
@@ -107,6 +109,7 @@
           </table>
         </div>
       </div>
+      <div id="bkgPager" class="mt-3"></div>
     </div>
   </div>
 </div>
@@ -146,7 +149,7 @@
         </div>
         <div class="mb-3">
           <label class="form-label">Type <span class="text-danger">*</span></label>
-          <select id="locType" class="form-select" onchange="toggleBookableFields()">
+          <select id="locType" class="form-select" onchange="onTypeChange()">
             <option value="BUILDING">BUILDING</option>
             <option value="FLOOR">FLOOR</option>
             <option value="OFFICE">OFFICE</option>
@@ -157,6 +160,7 @@
         <div class="mb-3">
           <label class="form-label">Parent</label>
           <select id="locParent" class="form-select"><option value="">— none (root) —</option></select>
+          <div id="locParentHint" class="form-text"></div>
         </div>
         <div id="bookableFields">
           <div class="mb-3">
@@ -167,6 +171,11 @@
             <label class="form-label">Open Time Rule</label>
             <input id="locOpenTime" class="form-control" placeholder="MON-FRI:09:00-18:00 or ALWAYS" />
             <div class="form-text">Format: <code>MON-FRI:09:00-18:00</code> · <code>MON-SAT:09:00-18:00</code> · <code>ALWAYS</code></div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Allowed Departments <span class="text-danger">*</span></label>
+            <select id="locDepts" class="form-select" multiple size="4"></select>
+            <div class="form-text">Hold Ctrl/Cmd to select multiple. A meeting room needs at least one.</div>
           </div>
         </div>
       </div>
@@ -246,7 +255,7 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/vendor/bootstrap.bundle.min.js"></script>
 <script>
 // ═══════════════════════════════════════════════════════
 // CONFIG
@@ -298,17 +307,46 @@ function fmtDt(s) {
 }
 
 // ═══════════════════════════════════════════════════════
+// PAGINATION (shared)
+// ═══════════════════════════════════════════════════════
+const PAGE_SIZE = 10;
+
+// Render a Bootstrap pager into `containerId` from a { page, limit, total, totalPages }
+// meta object. `fn` is the global handler name called with the target page number.
+function renderPager(containerId, meta, fn) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  if (!meta || !meta.total) { el.innerHTML = ''; return; }
+  const page = meta.page || 1;
+  const totalPages = meta.totalPages || 1;
+  const li = (p, label, disabled, active) =>
+    `<li class="page-item ${disabled ? 'disabled' : ''} ${active ? 'active' : ''}">
+       <button class="page-link" ${disabled ? 'disabled' : `onclick="${fn}(${p})"`}>${label}</button>
+     </li>`;
+  let items = li(page - 1, '«', page <= 1, false);
+  for (let p = 1; p <= totalPages; p++) items += li(p, p, false, p === page);
+  items += li(page + 1, '»', page >= totalPages, false);
+  el.innerHTML = `
+    <nav><ul class="pagination pagination-sm justify-content-center mb-1">${items}</ul></nav>
+    <div class="text-center text-muted small">Total ${meta.total} · Page ${page}/${totalPages}</div>`;
+}
+
+// ═══════════════════════════════════════════════════════
 // TAB LOCATION
 // ═══════════════════════════════════════════════════════
 let allLocations = [];
+let locPage = 1;
 
-async function loadLocations() {
+async function loadLocations(page = locPage) {
+  locPage = page;
+  document.getElementById('locSearch').value = '';
   const el = document.getElementById('locList');
   el.innerHTML = '<div class="spinner-wrap"><div class="spinner-border text-primary"></div></div>';
   try {
-    const data = await req('GET', '/locations/parents?page=1&limit=100');
-    allLocations = Array.isArray(data) ? data : (data.data || []);
+    const res = await req('GET', `/locations/parents?page=${page}&limit=${PAGE_SIZE}`);
+    allLocations = unwrapList(res);
     renderLocations(allLocations);
+    renderPager('locPager', res.meta, 'loadLocations');
     // Also load all locations flat for parent select & booking room select
     await loadAllFlat();
   } catch (e) { el.innerHTML = `<div class="alert alert-danger">${errMsg(e)}</div>`; }
@@ -413,6 +451,20 @@ function renderTreeNodes(nodes, isRoot) {
 }
 
 // Location Form
+// Fill the Allowed-Departments multi-select; pre-select the given ids.
+function populateDeptMultiSelect(selectedIds) {
+  const el = document.getElementById('locDepts');
+  const sel = new Set((selectedIds || []).map(String));
+  el.innerHTML = '';
+  allDepts.forEach(d => {
+    const o = document.createElement('option');
+    o.value = d.id;
+    o.textContent = `${d.code} — ${d.name}`;
+    o.selected = sel.has(String(d.id));
+    el.appendChild(o);
+  });
+}
+
 async function openLocationForm(id) {
   document.getElementById('locFormTitle').textContent = id ? 'Edit Location' : 'New Location';
   document.getElementById('locId').value = id || '';
@@ -422,7 +474,11 @@ async function openLocationForm(id) {
   document.getElementById('locParent').value = '';
   document.getElementById('locCapacity').value = '';
   document.getElementById('locOpenTime').value = '';
-  toggleBookableFields();
+  try { await ensureDepts(); } catch (e) { /* departments optional until MEETING_ROOM */ }
+  try { await ensureLocTypes(); } catch (e) { /* placement rules optional client-side */ }
+  if (!flatLocations.length) { try { await loadAllFlat(); } catch (e) {} }
+  populateDeptMultiSelect([]);
+  onTypeChange();
 
   if (id) {
     try {
@@ -430,10 +486,11 @@ async function openLocationForm(id) {
       document.getElementById('locName').value = loc.name || '';
       document.getElementById('locNumber').value = loc.locationNumber || '';
       document.getElementById('locType').value = loc.type || 'BUILDING';
-      document.getElementById('locParent').value = loc.parentId || '';
       document.getElementById('locCapacity').value = loc.capacity || '';
       document.getElementById('locOpenTime').value = loc.openTimeRule || '';
+      populateDeptMultiSelect(loc.departmentIds || []);
       toggleBookableFields();
+      filterParentOptions(loc.parentId || '');
     } catch (e) { toast(errMsg(e), false); return; }
   }
   bootstrap.Modal.getOrCreateInstance(document.getElementById('locFormModal')).show();
@@ -442,6 +499,60 @@ async function openLocationForm(id) {
 function toggleBookableFields() {
   const show = document.getElementById('locType').value === 'MEETING_ROOM';
   document.getElementById('bookableFields').style.display = show ? '' : 'none';
+}
+
+// Placement rules per type (allow_root + allowed_parent_types), loaded from the API.
+let locTypeRules = {};
+async function ensureLocTypes() {
+  if (Object.keys(locTypeRules).length) return locTypeRules;
+  try {
+    const types = await req('GET', '/location-types');
+    unwrapList(types).forEach(t => {
+      locTypeRules[t.code] = {
+        allowRoot: !!t.allowRoot,
+        allowedParentTypes: t.allowedParentTypes || [],
+      };
+    });
+  } catch { /* no rules -> no client-side filtering, API still enforces */ }
+  return locTypeRules;
+}
+
+// On Type change (and on form open): toggle bookable fields + restrict the Parent
+// dropdown to the parents this type may sit under, mirroring the API rule.
+function onTypeChange() {
+  toggleBookableFields();
+  filterParentOptions(document.getElementById('locParent').value);
+}
+
+function filterParentOptions(keepId) {
+  const type = document.getElementById('locType').value;
+  const rule = locTypeRules[type] || { allowRoot: true, allowedParentTypes: [] };
+  const sel = document.getElementById('locParent');
+  const hint = document.getElementById('locParentHint');
+  const candidates = flatLocations.filter(l => rule.allowedParentTypes.includes(l.type));
+
+  sel.innerHTML = '';
+  if (rule.allowRoot) sel.insertAdjacentHTML('beforeend', '<option value="">— none (root) —</option>');
+  candidates.forEach(l => {
+    const o = document.createElement('option');
+    o.value = l.id;
+    o.textContent = `${l.locationNumber} — ${l.name} (${l.type})`;
+    sel.appendChild(o);
+  });
+  if (keepId && [...sel.options].some(o => o.value === keepId)) sel.value = keepId;
+  else if (rule.allowRoot) sel.value = '';
+  else if (sel.options.length) sel.value = sel.options[0].value;
+
+  if (rule.allowRoot && !rule.allowedParentTypes.length) {
+    hint.className = 'form-text';
+    hint.textContent = `${type} is a root node — no parent needed.`;
+  } else if (!candidates.length) {
+    hint.className = 'form-text text-danger';
+    hint.textContent = `No valid parent exists yet — ${type} must sit under: ${rule.allowedParentTypes.join(', ') || '(none)'}.`;
+  } else {
+    hint.className = 'form-text';
+    hint.textContent = `${type} must sit under: ${rule.allowedParentTypes.join(', ')}${rule.allowRoot ? ', or none (root)' : ''}.`;
+  }
 }
 
 async function saveLocation() {
@@ -457,6 +568,7 @@ async function saveLocation() {
     if (cap) body.capacity = parseInt(cap);
     const otr = document.getElementById('locOpenTime').value.trim();
     if (otr) body.openTimeRule = otr;
+    body.departmentIds = Array.from(document.getElementById('locDepts').selectedOptions).map(o => o.value);
   }
   try {
     if (id) await req('PATCH', `/locations/${id}`, body);
@@ -482,14 +594,45 @@ async function deleteLocation(id, name) {
 // ═══════════════════════════════════════════════════════
 let allDepts = [];
 
-async function loadDepts() {
+// Unwrap a list endpoint that may be a raw array (old API) or { data, meta } (paginated).
+function unwrapList(res) {
+  return Array.isArray(res) ? res : (res && Array.isArray(res.data) ? res.data : []);
+}
+
+// Load departments once (used by the location & booking forms). Returns the cached list.
+async function ensureDepts() {
+  if (!allDepts.length) {
+    allDepts = unwrapList(await req('GET', '/departments?page=1&limit=100'));
+  }
+  return allDepts;
+}
+
+let deptPage = 1;
+
+// Fill the booking-form department dropdown from the full department cache.
+function populateBkgDept() {
+  const bkgDept = document.getElementById('bkgDept');
+  const cur = bkgDept.value;
+  bkgDept.innerHTML = '<option value="">Select department…</option>';
+  allDepts.forEach(d => {
+    const o = document.createElement('option');
+    o.value = d.id; o.textContent = `${d.code} — ${d.name}`;
+    bkgDept.appendChild(o);
+  });
+  if (cur) bkgDept.value = cur;
+}
+
+async function loadDepts(page = deptPage) {
+  deptPage = page;
   const tbody = document.getElementById('deptBody');
   tbody.innerHTML = '<tr><td colspan="4" class="text-center py-3"><div class="spinner-border spinner-border-sm text-primary"></div></td></tr>';
   try {
-    allDepts = await req('GET', '/departments');
-    tbody.innerHTML = allDepts.map((d, i) => `
+    const res = await req('GET', `/departments?page=${page}&limit=${PAGE_SIZE}`);
+    const rows = unwrapList(res);
+    const offset = ((res.meta?.page || 1) - 1) * (res.meta?.limit || PAGE_SIZE);
+    tbody.innerHTML = rows.length ? rows.map((d, i) => `
       <tr>
-        <td class="text-muted">${i + 1}</td>
+        <td class="text-muted">${offset + i + 1}</td>
         <td><span class="badge bg-primary">${d.code}</span></td>
         <td>${d.name}</td>
         <td>
@@ -497,17 +640,11 @@ async function loadDepts() {
           <button class="btn btn-sm btn-outline-danger" onclick="deleteDept('${d.id}','${d.code}')"><i class="bi bi-trash"></i></button>
         </td>
       </tr>
-    `).join('');
-    // Refresh dept select in booking form
-    const bkgDept = document.getElementById('bkgDept');
-    const cur = bkgDept.value;
-    bkgDept.innerHTML = '<option value="">Select department…</option>';
-    allDepts.forEach(d => {
-      const o = document.createElement('option');
-      o.value = d.id; o.textContent = `${d.code} — ${d.name}`;
-      bkgDept.appendChild(o);
-    });
-    if (cur) bkgDept.value = cur;
+    `).join('') : '<tr><td colspan="4" class="text-center text-muted py-3">No departments found.</td></tr>';
+    renderPager('deptPager', res.meta, 'loadDepts');
+    // Keep the full department cache (dropdowns + row lookups) complete & fresh.
+    allDepts = unwrapList(await req('GET', '/departments?page=1&limit=100'));
+    populateBkgDept();
   } catch (e) {
     tbody.innerHTML = `<tr><td colspan="4"><div class="alert alert-danger mb-0">${errMsg(e)}</div></td></tr>`;
   }
@@ -556,25 +693,30 @@ async function deleteDept(id, code) {
 // TAB BOOKING
 // ═══════════════════════════════════════════════════════
 let allBookings = [];
+let bkgPage = 1;
 
-async function loadBookings() {
+async function loadBookings(page = bkgPage) {
+  bkgPage = page;
   const tbody = document.getElementById('bookingBody');
   tbody.innerHTML = '<tr><td colspan="8" class="text-center py-3"><div class="spinner-border spinner-border-sm text-primary"></div></td></tr>';
   const locId = document.getElementById('bkgLocFilter').value;
   try {
-    const qs = locId ? `?locationId=${locId}` : '';
-    allBookings = await req('GET', `/bookings${qs}`);
+    const locQs = locId ? `locationId=${locId}&` : '';
+    const res = await req('GET', `/bookings?${locQs}page=${page}&limit=${PAGE_SIZE}`);
+    allBookings = unwrapList(res);
+    renderPager('bkgPager', res.meta, 'loadBookings');
     if (!allBookings.length) {
       tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">No bookings found.</td></tr>';
       return;
     }
+    const offset = ((res.meta?.page || 1) - 1) * (res.meta?.limit || PAGE_SIZE);
     tbody.innerHTML = allBookings.map((b, i) => {
       const loc = flatLocations.find(l => l.id === b.locationId);
       const dept = allDepts.find(d => d.id === b.departmentId);
       const cancelled = b.status === 'CANCELLED';
       return `
         <tr class="${cancelled ? 'table-secondary text-muted' : ''}">
-          <td>${i + 1}</td>
+          <td>${offset + i + 1}</td>
           <td>${loc ? `<code>${loc.locationNumber}</code> ${loc.name}` : b.locationId}</td>
           <td>${dept ? dept.code : b.departmentId}</td>
           <td>${b.attendees}</td>
@@ -595,6 +737,18 @@ async function loadBookings() {
 async function openBookingForm(id) {
   document.getElementById('bookingFormTitle').textContent = id ? 'Edit Booking' : 'New Booking';
   document.getElementById('bkgId').value = id || '';
+  // Make sure room & department dropdowns are populated even if their tabs were never opened.
+  await loadAllFlat();
+  try {
+    await ensureDepts();
+    const bkgDept = document.getElementById('bkgDept');
+    bkgDept.innerHTML = '<option value="">Select department…</option>';
+    allDepts.forEach(d => {
+      const o = document.createElement('option');
+      o.value = d.id; o.textContent = `${d.code} — ${d.name}`;
+      bkgDept.appendChild(o);
+    });
+  } catch (e) { /* leave dept empty on failure */ }
   document.getElementById('bkgLocation').value = '';
   document.getElementById('bkgDept').value = '';
   document.getElementById('bkgAttendees').value = '';
@@ -628,7 +782,7 @@ async function saveBooking() {
 async function cancelBooking(id) {
   if (!confirm('Cancel this booking?')) return;
   try {
-    await req('DELETE', `/bookings/${id}`);
+    await req('POST', `/bookings/${id}/cancel`);
     toast('Booking cancelled');
     loadBookings();
   } catch (e) { toast(errMsg(e), false); }

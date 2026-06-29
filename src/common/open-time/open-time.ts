@@ -102,21 +102,39 @@ export interface WallClock {
   isoDow: number; // 1=Mon ... 7=Sun
 }
 
-const ISO_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/;
-
 /**
- * Reads the "wall clock" (date/time/weekday) EXACTLY as sent in the string — ignoring
- * the offset. This makes "reject weekend bookings" correct in the requester's local
- * time, independent of the server timezone. Returns null on a malformed string.
+ * Wall-clock (date/time/weekday) of an absolute instant **in a given IANA timezone**.
+ *
+ * This is the single source of truth for time across the app: the booking is stored as
+ * an absolute `timestamptz` (so overlap detection is exact), and open-hours are evaluated
+ * by projecting that same instant into the configured business timezone. Two inputs that
+ * denote the same instant therefore always agree on BOTH overlap and open-hours — the
+ * previous "wall-clock-from-string vs absolute-instant" inconsistency is gone.
+ *
+ * Uses the built-in Intl API (no extra dependency, full IANA + DST support).
  */
-export function wallClockOf(iso: string): WallClock | null {
-  const m = ISO_RE.exec(iso);
-  if (!m) return null;
-  const [, y, mo, d, hh, mm] = m;
-  // getUTCDay: 0=Sun..6=Sat -> convert to ISO 1=Mon..7=Sun.
-  const dow = new Date(Date.UTC(+y, +mo - 1, +d)).getUTCDay();
-  const isoDow = dow === 0 ? 7 : dow;
-  return { date: `${y}-${mo}-${d}`, hm: `${hh}:${mm}`, isoDow };
+export function wallClockInTz(date: Date, timeZone: string): WallClock {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    weekday: 'short',
+    hourCycle: 'h23', // 00..23 (avoid "24:00" for midnight)
+  }).formatToParts(date);
+
+  const get = (type: Intl.DateTimeFormatPartTypes): string =>
+    parts.find((p) => p.type === type)?.value ?? '';
+
+  const weekday = get('weekday'); // "Mon".."Sun"
+  const isoDow = DAY_INDEX[weekday.toUpperCase()] ?? 0;
+  return {
+    date: `${get('year')}-${get('month')}-${get('day')}`,
+    hm: `${get('hour')}:${get('minute')}`,
+    isoDow,
+  };
 }
 
 export interface OpenHoursCheck {
@@ -130,31 +148,72 @@ function hm(value: string): string {
 }
 
 /**
- * Checks whether [startIso, endIso] falls within the room's open hours.
- * Compares wall-clock directly (no runtime rule parsing). The booking must fit within
- * a single day. Returns { ok, reason } so the service can build a clear error message.
+ * Checks whether [start, end] (absolute instants) falls within the room's open hours,
+ * evaluated in `timeZone`. The booking must fit within a single calendar day in that
+ * timezone. Returns { ok, reason } so the service can build a clear error message.
  */
 export function checkOpenHours(
-  startIso: string,
-  endIso: string,
+  start: Date,
+  end: Date,
   room: { openDays: number[]; openFrom: string; openTo: string },
+  timeZone: string,
 ): OpenHoursCheck {
-  const start = wallClockOf(startIso);
-  const end = wallClockOf(endIso);
-  if (!start || !end) return { ok: false, reason: 'invalid time format' };
-  if (start.date !== end.date) {
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+    return { ok: false, reason: 'invalid time format' };
+  }
+  const s = wallClockInTz(start, timeZone);
+  const e = wallClockInTz(end, timeZone);
+  if (s.date !== e.date) {
     return { ok: false, reason: 'booking must start and end on the same day' };
   }
-  if (!room.openDays.includes(start.isoDow)) {
+  if (!room.openDays.includes(s.isoDow)) {
     return { ok: false, reason: 'day is outside open days' };
   }
-  if (start.hm < hm(room.openFrom)) {
+  if (s.hm < hm(room.openFrom)) {
     return { ok: false, reason: 'starts before opening time' };
   }
-  if (end.hm > hm(room.openTo)) {
+  if (e.hm > hm(room.openTo)) {
     return { ok: false, reason: 'ends after closing time' };
   }
   return { ok: true };
+}
+
+/**
+ * Absolute [from, to) instants bounding a calendar date in `timeZone` — used to filter
+ * bookings by day consistently with how they are stored (timestamptz) and validated.
+ * `to` is the start of the next day, so the range is half-open.
+ */
+export function dayRangeInTz(
+  dateStr: string,
+  timeZone: string,
+): { from: Date; to: Date } {
+  const [y, mo, d] = dateStr.split('-').map(Number);
+  const from = zonedMidnight(y, mo, d, timeZone);
+  const to = zonedMidnight(y, mo, d + 1, timeZone);
+  return { from, to };
+}
+
+/** UTC instant of local midnight (y-mo-d 00:00) in `timeZone`. Handles the tz offset. */
+function zonedMidnight(
+  y: number,
+  mo: number,
+  d: number,
+  timeZone: string,
+): Date {
+  // Start from the naive UTC guess, then correct by the zone's offset at that instant.
+  const naiveUtc = Date.UTC(y, mo - 1, d, 0, 0, 0);
+  const guess = new Date(naiveUtc);
+  const wc = wallClockInTz(guess, timeZone);
+  const [gh, gm] = wc.hm.split(':').map(Number);
+  const seenUtc = Date.UTC(
+    +wc.date.slice(0, 4),
+    +wc.date.slice(5, 7) - 1,
+    +wc.date.slice(8, 10),
+    gh,
+    gm,
+  );
+  const offset = seenUtc - naiveUtc; // tz offset in ms
+  return new Date(naiveUtc - offset);
 }
 
 /** Format typed columns -> compact string for client/log. Null if not bookable. */

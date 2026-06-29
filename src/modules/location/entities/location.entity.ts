@@ -3,17 +3,22 @@ import {
   Entity,
   Index,
   JoinColumn,
+  JoinTable,
+  ManyToMany,
   ManyToOne,
   OneToMany,
 } from 'typeorm';
 import { BaseEntity } from '../../../common/entities/base.entity';
+import { Department } from '../../department/entities/department.entity';
 
 /**
  * Node in the location tree (adjacency list via a parent_id self-reference).
  *
  * - Bookable node (MEETING_ROOM) has all of: capacity, open_from/open_to/open_days.
  * - Structural node (BUILDING/FLOOR/OFFICE/OTHER) leaves those columns NULL -> not bookable.
- * - Department is specified at booking time, not tied to location.
+ * - A bookable node also owns a set of departments allowed to book it (many-to-many via
+ *   `location_departments`). A booking is accepted only if its department is in this set
+ *   (the "Department Matching" rule). Structural nodes keep this set empty.
  * - location_number: partial unique WHERE deleted_at IS NULL (soft-delete then recreate
  *   with the same number without hitting the unique constraint).
  */
@@ -57,6 +62,17 @@ export class Location extends BaseEntity {
 
   @Column({ name: 'open_days', type: 'smallint', array: true, nullable: true })
   openDays!: number[] | null; // 1=Mon ... 7=Sun
+
+  // ── Departments allowed to book this node (many-to-many) ────────────────────────
+  // Owning side: saving a Location with this relation set writes the join rows.
+  // Only bookable nodes populate it; the Department Matching rule checks membership.
+  @ManyToMany(() => Department)
+  @JoinTable({
+    name: 'location_departments',
+    joinColumn: { name: 'location_id', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'department_id', referencedColumnName: 'id' },
+  })
+  departments!: Department[];
 
   /**
    * Bookable when capacity + open hours are present. The service only populates these

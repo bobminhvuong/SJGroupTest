@@ -1,9 +1,9 @@
 # ============================================================================
-# Dockerfile PROD — multi-stage: build xong chỉ giữ dist + prod deps (image gọn)
-# Build context = thư mục gốc project (xem docker-compose.prod.yml / .gitlab-ci.yml)
+# PROD Dockerfile — multi-stage: after build, keep only dist + prod deps (slim image)
+# Build context = project root (see docker-compose.prod.yml / .gitlab-ci.yml)
 # ============================================================================
 
-# ---- Stage 1: build (cần cả devDependencies: nest cli, typescript) ----------
+# ---- Stage 1: build (needs devDependencies too: nest cli, typescript) -------
 FROM node:20-alpine AS builder
 WORKDIR /app
 
@@ -13,7 +13,7 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-# ---- Stage 2: production runtime (chỉ prod deps + dist) ---------------------
+# ---- Stage 2: production runtime (prod deps + dist only) --------------------
 FROM node:20-alpine AS production
 WORKDIR /app
 ENV NODE_ENV=production

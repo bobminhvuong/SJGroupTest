@@ -6,13 +6,15 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { CacheService } from '../../../shared/cache/cache.contracts';
 import { CacheTag } from '../../../shared/cache/cache-keys';
 import {
   formatOpenTimeRule,
   parseOpenTimeRule,
 } from '../../../common/open-time/open-time';
+import { PagedResult } from '../../../common/dto/paged-result';
+import { Department } from '../../department/entities/department.entity';
 import { CreateLocationDto } from '../dto/create-location.dto';
 import { UpdateLocationDto } from '../dto/update-location.dto';
 import { Location } from '../entities/location.entity';
@@ -28,6 +30,8 @@ export interface LocationNode {
   capacity: number | null;
   openTimeRule: string | null;
   isBookable: boolean;
+  /** Ids of departments allowed to book this node (empty for non-bookable nodes). */
+  departmentIds: string[];
   children: LocationNode[];
 }
 
@@ -38,18 +42,24 @@ export class LocationService {
   constructor(
     @InjectRepository(Location)
     private readonly locationRepo: Repository<Location>,
+    @InjectRepository(Department)
+    private readonly departmentRepo: Repository<Department>,
     private readonly cache: CacheService,
     private readonly locationTypeService: LocationTypeService,
   ) {}
 
   // ── CREATE ──────────────────────────────────────────────────────────────────
   async create(dto: CreateLocationDto): Promise<Location> {
+    let parent: Location | null = null;
     if (dto.parentId) {
-      const parent = await this.locationRepo.findOne({
+      parent = await this.locationRepo.findOne({
         where: { id: dto.parentId },
       });
       if (!parent) throw new NotFoundException('Parent location not found');
     }
+
+    // Placement rule: a type may only be a root / placed under certain parent types.
+    await this.assertPlacementAllowed(dto.type, parent);
 
     await this.assertNumberFree(dto.locationNumber);
 
@@ -59,7 +69,12 @@ export class LocationService {
       type: dto.type,
       parentId: dto.parentId ?? null,
     });
-    await this.applyBookableFields(entity, dto, dto.type);
+    const bookable = await this.applyBookableFields(entity, dto, dto.type);
+    entity.departments = await this.resolveDepartments(
+      bookable,
+      dto.departmentIds,
+      dto.type,
+    );
 
     const saved = await this.locationRepo.save(entity);
     await this.invalidateTree();
@@ -85,11 +100,15 @@ export class LocationService {
   async findOne(
     id: string,
   ): Promise<LocationNode & { children: LocationNode[] }> {
-    const node = await this.locationRepo.findOne({ where: { id } });
+    const node = await this.locationRepo.findOne({
+      where: { id },
+      relations: { departments: true },
+    });
     if (!node) throw new NotFoundException('Location not found');
 
     const children = await this.locationRepo.find({
       where: { parentId: id },
+      relations: { departments: true },
       order: { locationNumber: 'ASC' },
     });
     const result = this.toNode(node);
@@ -97,9 +116,15 @@ export class LocationService {
     return result;
   }
 
-  /** Raw entity (for other modules such as Booking). Throws 404 if not found. */
+  /**
+   * Raw entity + its allowed departments (for other modules such as Booking, which needs
+   * the department set to enforce the Department Matching rule). Throws 404 if not found.
+   */
   async getEntityOrFail(id: string): Promise<Location> {
-    const node = await this.locationRepo.findOne({ where: { id } });
+    const node = await this.locationRepo.findOne({
+      where: { id },
+      relations: { departments: true },
+    });
     if (!node) throw new NotFoundException('Location not found');
     return node;
   }
@@ -109,12 +134,12 @@ export class LocationService {
     page: number;
     limit: number;
     type?: string;
-  }): Promise<{ data: LocationNode[]; total: number }> {
+  }): Promise<PagedResult<LocationNode>> {
     const { page, limit, type } = query;
-    const skip = (page - 1) * limit;
 
     const qb = this.locationRepo
       .createQueryBuilder('l')
+      .leftJoinAndSelect('l.departments', 'departments')
       .where('l.deleted_at IS NULL')
       .andWhere('l.parent_id IS NULL');
 
@@ -122,19 +147,26 @@ export class LocationService {
       qb.andWhere('l.type = :type', { type });
     }
 
-    const total = await qb.getCount();
-    const parents = await qb
+    const [parents, total] = await qb
       .orderBy('l.location_number', 'ASC')
-      .skip(skip)
+      .skip((page - 1) * limit)
       .take(limit)
-      .getMany();
+      .getManyAndCount();
 
-    return { data: parents.map((loc) => this.toNode(loc)), total };
+    return new PagedResult(
+      parents.map((loc) => this.toNode(loc)),
+      total,
+      page,
+      limit,
+    );
   }
 
   // ── UPDATE ──────────────────────────────────────────────────────────────────
   async update(id: string, dto: UpdateLocationDto): Promise<Location> {
-    const node = await this.locationRepo.findOne({ where: { id } });
+    const node = await this.locationRepo.findOne({
+      where: { id },
+      relations: { departments: true },
+    });
     if (!node) throw new NotFoundException('Location not found');
 
     if (dto.locationNumber && dto.locationNumber !== node.locationNumber) {
@@ -149,13 +181,43 @@ export class LocationService {
     }
 
     const nextType = dto.type ?? node.type;
+
+    // Re-validate placement when type or parent changes (the resulting node must still
+    // satisfy its type's allow_root / allowed_parent_types rule).
+    if (dto.type !== undefined || dto.parentId !== undefined) {
+      let parent: Location | null = null;
+      if (node.parentId) {
+        parent = await this.locationRepo.findOne({
+          where: { id: node.parentId },
+        });
+        if (!parent) throw new NotFoundException('Parent location not found');
+      }
+      await this.assertPlacementAllowed(nextType, parent);
+    }
+
     node.type = nextType;
+    let bookable = node.isBookable;
     if (
       dto.type !== undefined ||
       dto.capacity !== undefined ||
       dto.openTimeRule !== undefined
     ) {
-      await this.applyBookableFields(node, dto, nextType, true);
+      bookable = await this.applyBookableFields(node, dto, nextType, true);
+    } else {
+      bookable = (await this.locationTypeService.getByCodeOrFail(nextType))
+        .isBookable;
+    }
+
+    // Departments: clear when the node is no longer bookable; otherwise replace only
+    // when the caller sent departmentIds (undefined = leave the existing set untouched).
+    if (!bookable) {
+      node.departments = [];
+    } else if (dto.departmentIds !== undefined) {
+      node.departments = await this.resolveDepartments(
+        bookable,
+        dto.departmentIds,
+        nextType,
+      );
     }
 
     const saved = await this.locationRepo.save(node);
@@ -193,6 +255,39 @@ export class LocationService {
   }
 
   /**
+   * Location-placement rule (data-driven from location_types):
+   *  - no parent  -> the type must allow being a root (allow_root = true);
+   *  - has parent -> the parent's type must be in the type's allowed_parent_types.
+   * Throws 400 with a clear message otherwise.
+   */
+  private async assertPlacementAllowed(
+    typeCode: string,
+    parent: Location | null,
+  ): Promise<void> {
+    const lt = await this.locationTypeService.getByCodeOrFail(typeCode);
+    const allowed = lt.allowedParentTypes ?? [];
+
+    if (!parent) {
+      if (!lt.allowRoot) {
+        const hint = allowed.length
+          ? `it must be placed under: ${allowed.join(', ')}`
+          : 'it has no valid parent types configured';
+        throw new BadRequestException(
+          `"${typeCode}" cannot be a root node; ${hint}`,
+        );
+      }
+      return;
+    }
+
+    if (!allowed.includes(parent.type)) {
+      const hint = allowed.length ? allowed.join(', ') : '(root only)';
+      throw new BadRequestException(
+        `"${typeCode}" cannot be placed under "${parent.type}"; allowed parent types: ${hint}`,
+      );
+    }
+  }
+
+  /**
    * Fill/clear bookable columns based on the type's is_bookable flag (read from the
    * location_types table — not a hardcoded code). A bookable type requires capacity +
    * open time; any other type clears them to NULL.
@@ -202,7 +297,7 @@ export class LocationService {
     dto: CreateLocationDto | UpdateLocationDto,
     type: string,
     isUpdate = false,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const locationType = await this.locationTypeService.getByCodeOrFail(type);
 
     if (!locationType.isBookable) {
@@ -210,7 +305,7 @@ export class LocationService {
       entity.openFrom = null;
       entity.openTo = null;
       entity.openDays = null;
-      return;
+      return false;
     }
 
     const capacity = dto.capacity ?? (isUpdate ? entity.capacity : null);
@@ -228,6 +323,39 @@ export class LocationService {
     } else if (!isUpdate || entity.openDays == null) {
       throw new BadRequestException(`${type} requires openTimeRule`);
     }
+    return true;
+  }
+
+  /**
+   * Resolve + validate the department set for a node. A bookable node must list at least
+   * one existing department (so the Department Matching rule is enforceable); a
+   * non-bookable node never carries departments.
+   */
+  private async resolveDepartments(
+    bookable: boolean,
+    departmentIds: string[] | null | undefined,
+    type: string,
+  ): Promise<Department[]> {
+    if (!bookable) return [];
+
+    const ids = [...new Set(departmentIds ?? [])];
+    if (ids.length === 0) {
+      throw new BadRequestException(
+        `${type} requires at least one departmentId`,
+      );
+    }
+
+    const departments = await this.departmentRepo.find({
+      where: { id: In(ids) },
+    });
+    if (departments.length !== ids.length) {
+      const found = new Set(departments.map((d) => d.id));
+      const missing = ids.filter((id) => !found.has(id));
+      throw new BadRequestException(
+        `Unknown departmentId(s): ${missing.join(', ')}`,
+      );
+    }
+    return departments;
   }
 
   /** Disallow setting the parent to the node itself or one of its descendants (cycle). */
@@ -279,7 +407,15 @@ export class LocationService {
          WHERE c.deleted_at IS NULL
            ${typeFilter}
        )
-       SELECT * FROM subtree ORDER BY location_number`,
+       SELECT s.*,
+              ld.dept_ids
+       FROM subtree s
+       LEFT JOIN (
+         SELECT location_id, array_agg(department_id ORDER BY department_id) AS dept_ids
+         FROM location_departments
+         GROUP BY location_id
+       ) ld ON ld.location_id = s.id
+       ORDER BY s.location_number`,
       params,
     );
 
@@ -312,6 +448,7 @@ export class LocationService {
         openTo: loc.openTo ?? undefined,
       }),
       isBookable: loc.isBookable,
+      departmentIds: (loc.departments ?? []).map((d) => d.id),
       children: [],
     };
   }
@@ -322,6 +459,11 @@ export class LocationService {
     const openTo = (row.open_to as string | null) ?? undefined;
     const type = row.type as string;
     const capacity = (row.capacity as number | null) ?? null;
+    // dept_ids comes from array_agg in the CTE; bigint[] -> string[] (may contain a
+    // single NULL when there are no mappings, which we filter out).
+    const departmentIds = ((row.dept_ids as Array<string | null> | null) ?? [])
+      .filter((id): id is string => id != null)
+      .map((id) => String(id));
     return {
       id: row.id as string,
       name: row.name as string,
@@ -333,6 +475,7 @@ export class LocationService {
       // Mirror Location.isBookable: capacity + open hours present (only bookable types
       // ever get these populated).
       isBookable: capacity != null && openDays.length > 0,
+      departmentIds,
       children: [],
     };
   }

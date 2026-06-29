@@ -1,5 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  ArrayUnique,
+  IsArray,
   IsInt,
   IsNumberString,
   IsOptional,
@@ -8,7 +10,10 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
-import { ToIdString } from '../../../common/transforms/to-id-string';
+import {
+  ToIdString,
+  ToIdStringArray,
+} from '../../../common/transforms/to-id-string';
 import { LocationType } from '../entities/location-type.entity';
 
 /**
@@ -66,4 +71,19 @@ export class CreateLocationDto {
   @IsOptional()
   @IsString()
   openTimeRule?: string | null;
+
+  @ApiPropertyOptional({
+    type: [String],
+    example: ['1', '2'],
+    description:
+      'Department ids allowed to book this room (a room may serve several). ' +
+      'Required (at least one) for bookable types; ignored for structural types. ' +
+      'Enforces the "Department Matching" rule at booking time.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @ToIdStringArray()
+  @IsNumberString({}, { each: true })
+  departmentIds?: string[];
 }

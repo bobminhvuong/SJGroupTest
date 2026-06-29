@@ -57,6 +57,14 @@ class EnvironmentVariables {
   REDIS_PORT!: number;
 
   @IsOptional()
+  @IsString()
+  APP_TIMEZONE?: string;
+
+  @IsOptional()
+  @IsString()
+  CORS_ORIGIN?: string;
+
+  @IsOptional()
   @IsInt()
   @Min(1)
   LOCATION_TREE_CACHE_TTL?: number;

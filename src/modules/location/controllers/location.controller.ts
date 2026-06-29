@@ -9,7 +9,15 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import {
+  ApiConflictResponse,
+  ApiNotFoundResponse,
+  ApiOperation,
+  ApiQuery,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import { ErrorResponseDto } from '../../../common/dto/error-response.dto';
 import { ParseIdPipe } from '../../../common/pipes/parse-id.pipe';
 import { CreateLocationDto } from '../dto/create-location.dto';
 import { ListLocationParentDto } from '../dto/list-location-parent.dto';
@@ -23,6 +31,21 @@ export class LocationController {
 
   @Post()
   @ApiOperation({ summary: 'Create a location node under a parent' })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Validation failed (e.g. bookable type missing capacity/openTimeRule/departmentIds, ' +
+      'or unknown departmentId).',
+    type: ErrorResponseDto,
+  })
+  @ApiNotFoundResponse({
+    description: 'Parent location not found.',
+    type: ErrorResponseDto,
+  })
+  @ApiConflictResponse({
+    description: 'locationNumber already exists.',
+    type: ErrorResponseDto,
+  })
   create(@Body() dto: CreateLocationDto) {
     return this.locationService.create(dto);
   }
@@ -73,6 +96,14 @@ export class LocationController {
   @HttpCode(204)
   @ApiOperation({
     summary: 'Soft-delete a location (blocked if it has active children)',
+  })
+  @ApiNotFoundResponse({
+    description: 'Location not found.',
+    type: ErrorResponseDto,
+  })
+  @ApiConflictResponse({
+    description: 'Node has active child nodes — delete or move them first.',
+    type: ErrorResponseDto,
   })
   remove(@Param('id', ParseIdPipe) id: string) {
     return this.locationService.remove(id);

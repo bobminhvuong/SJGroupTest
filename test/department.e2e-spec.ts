@@ -17,7 +17,7 @@ describe('Department (e2e)', () => {
 
   it('GET /departments lists seeded departments', async () => {
     const res = await request(app.getHttpServer()).get(base).expect(200);
-    const codes = (res.body as Array<{ code: string }>).map((d) => d.code);
+    const codes = (res.body.data as Array<{ code: string }>).map((d) => d.code);
     expect(codes).toEqual(expect.arrayContaining(['EFM', 'FSS', 'AVS', 'ASS']));
   });
 

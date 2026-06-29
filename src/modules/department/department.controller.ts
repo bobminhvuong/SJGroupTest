@@ -1,9 +1,20 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { ParseIdPipe } from '../../common/pipes/parse-id.pipe';
 import { DepartmentService } from './department.service';
 import { CreateDepartmentDto } from './dto/create-department.dto';
 import { ListDepartmentDto } from './dto/list-department.dto';
+import { UpdateDepartmentDto } from './dto/update-department.dto';
 
 @ApiTags('departments')
 @Controller('departments')
@@ -47,5 +58,23 @@ export class DepartmentController {
   @ApiOperation({ summary: 'Get department details' })
   findOne(@Param('id', ParseIdPipe) id: string) {
     return this.departmentService.findOne(id);
+  }
+
+  @Patch(':id')
+  @ApiOperation({
+    summary: 'Update department (prevent duplicate code & name)',
+  })
+  update(
+    @Param('id', ParseIdPipe) id: string,
+    @Body() dto: UpdateDepartmentDto,
+  ) {
+    return this.departmentService.update(id, dto);
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Delete department (soft delete)' })
+  remove(@Param('id', ParseIdPipe) id: string) {
+    return this.departmentService.remove(id);
   }
 }

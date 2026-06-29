@@ -14,6 +14,7 @@ describe('LocationService', () => {
     count: jest.Mock;
     softRemove: jest.Mock;
   };
+  let departmentRepo: { find: jest.Mock };
   let cache: { invalidateTag: jest.Mock };
   let typeService: { getByCodeOrFail: jest.Mock };
 
@@ -25,11 +26,19 @@ describe('LocationService', () => {
       count: jest.fn().mockResolvedValue(0),
       softRemove: jest.fn().mockResolvedValue(undefined),
     };
+    // By default resolve every requested department id to an existing row.
+    // `where.id` is a TypeORM In(...) FindOperator; `.value` exposes the id array.
+    departmentRepo = {
+      find: jest.fn(({ where }: { where: { id: { value: string[] } } }) =>
+        Promise.resolve((where.id.value ?? []).map((id) => ({ id }))),
+      ),
+    };
     cache = { invalidateTag: jest.fn().mockResolvedValue(undefined) };
     typeService = { getByCodeOrFail: jest.fn() };
 
     service = new LocationService(
       repo as never,
+      departmentRepo as never,
       cache as never,
       typeService as never,
     );
@@ -41,6 +50,7 @@ describe('LocationService', () => {
     type: 'MEETING_ROOM',
     capacity: 10,
     openTimeRule: 'MON-FRI:09:00-18:00',
+    departmentIds: ['1'],
     ...over,
   });
 
@@ -48,32 +58,85 @@ describe('LocationService', () => {
     typeService.getByCodeOrFail.mockResolvedValue({
       code: 'MEETING_ROOM',
       isBookable: true,
+      allowRoot: true, // placement isolated here; these tests exercise other logic
+      allowedParentTypes: [],
     });
-    const saved = await service.create(dto());
+    const saved = await service.create(dto({ departmentIds: ['1', '2'] }));
     expect(saved.capacity).toBe(10);
     expect(saved.openDays).toEqual([1, 2, 3, 4, 5]);
+    expect(saved.departments.map((d: { id: string }) => d.id)).toEqual([
+      '1',
+      '2',
+    ]);
     expect(cache.invalidateTag).toHaveBeenCalledTimes(1);
   });
 
-  it('clears capacity + open hours for a non-bookable type', async () => {
+  it('clears capacity + open hours + departments for a non-bookable type', async () => {
     typeService.getByCodeOrFail.mockResolvedValue({
       code: 'BUILDING',
       isBookable: false,
+      allowRoot: true,
+      allowedParentTypes: [],
     });
     const saved = await service.create(
-      dto({ type: 'BUILDING', capacity: 99, openTimeRule: 'ALWAYS' }),
+      dto({
+        type: 'BUILDING',
+        capacity: 99,
+        openTimeRule: 'ALWAYS',
+        departmentIds: ['1'],
+      }),
     );
     expect(saved.capacity).toBeNull();
     expect(saved.openDays).toBeNull();
+    expect(saved.departments).toEqual([]);
+  });
+
+  it('rejects a bookable type without any departmentId', async () => {
+    typeService.getByCodeOrFail.mockResolvedValue({
+      code: 'MEETING_ROOM',
+      isBookable: true,
+      allowRoot: true, // placement isolated here; these tests exercise other logic
+      allowedParentTypes: [],
+    });
+    await expect(
+      service.create(dto({ departmentIds: [] }) as never),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejects an unknown departmentId', async () => {
+    typeService.getByCodeOrFail.mockResolvedValue({
+      code: 'MEETING_ROOM',
+      isBookable: true,
+      allowRoot: true, // placement isolated here; these tests exercise other logic
+      allowedParentTypes: [],
+    });
+    departmentRepo.find.mockResolvedValue([]); // none of the ids exist
+    await expect(
+      service.create(dto({ departmentIds: ['999'] }) as never),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('rejects a bookable type without capacity', async () => {
     typeService.getByCodeOrFail.mockResolvedValue({
       code: 'MEETING_ROOM',
       isBookable: true,
+      allowRoot: true, // placement isolated here; these tests exercise other logic
+      allowedParentTypes: [],
     });
     await expect(
       service.create(dto({ capacity: undefined }) as never),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejects placing a type that cannot be a root (allow_root = false, no parent)', async () => {
+    typeService.getByCodeOrFail.mockResolvedValue({
+      code: 'MEETING_ROOM',
+      isBookable: true,
+      allowRoot: false,
+      allowedParentTypes: ['FLOOR', 'OFFICE'],
+    });
+    await expect(
+      service.create(dto()), // no parentId -> would be a root
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 

@@ -60,6 +60,7 @@ describe('Location (e2e)', () => {
 
   it('POST /locations creates a MEETING_ROOM under a floor and invalidates tree cache', async () => {
     const floorId = await locationIdByNumber(app, 'A-01');
+    const efmId = await departmentIdByCode(app, 'EFM');
 
     const created = await request(app.getHttpServer())
       .post(base)
@@ -70,9 +71,13 @@ describe('Location (e2e)', () => {
         parentId: floorId,
         capacity: 12,
         openTimeRule: 'MON-FRI:08:00-17:00',
+        departmentIds: [efmId],
       })
       .expect(201);
     expect(created.body.id).toMatch(/^\d+$/);
+    expect(created.body.departments?.map((d: { id: string }) => d.id)).toEqual([
+      efmId,
+    ]);
 
     // Cache must be invalidated -> the refreshed tree should contain the newly created node.
     const tree = await request(app.getHttpServer())
@@ -91,6 +96,51 @@ describe('Location (e2e)', () => {
         locationNumber: 'A-01-BAD',
         type: 'MEETING_ROOM',
         parentId: floorId,
+      })
+      .expect(400);
+  });
+
+  it('rejects a BUILDING placed under a parent (must be root) with 400', async () => {
+    const floorId = await locationIdByNumber(app, 'A-01');
+    return request(app.getHttpServer())
+      .post(base)
+      .send({
+        name: 'Nested Building',
+        locationNumber: 'A-01-BLD',
+        type: 'BUILDING',
+        parentId: floorId,
+      })
+      .expect(400);
+  });
+
+  it('rejects a MEETING_ROOM as a root node (needs FLOOR/OFFICE parent) with 400', async () => {
+    const efmId = await departmentIdByCode(app, 'EFM');
+    return request(app.getHttpServer())
+      .post(base)
+      .send({
+        name: 'Rootless Room',
+        locationNumber: 'ROOT-RM',
+        type: 'MEETING_ROOM',
+        capacity: 8,
+        openTimeRule: 'ALWAYS',
+        departmentIds: [efmId],
+      })
+      .expect(400);
+  });
+
+  it('rejects a MEETING_ROOM placed directly under a BUILDING with 400', async () => {
+    const buildingId = await locationIdByNumber(app, 'A');
+    const efmId = await departmentIdByCode(app, 'EFM');
+    return request(app.getHttpServer())
+      .post(base)
+      .send({
+        name: 'Room under Building',
+        locationNumber: 'A-RM',
+        type: 'MEETING_ROOM',
+        parentId: buildingId,
+        capacity: 8,
+        openTimeRule: 'ALWAYS',
+        departmentIds: [efmId],
       })
       .expect(400);
   });

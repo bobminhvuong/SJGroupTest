@@ -35,6 +35,7 @@ export interface LocationSeed {
   openDays: number[] | null; // 1=Mon ... 7=Sun
   openFrom: string | null; // "HH:mm"
   openTo: string | null; // "HH:mm"
+  departmentCodes: string[] | null; // departments allowed to book (bookable nodes only)
 }
 
 const WEEKDAYS = [1, 2, 3, 4, 5]; // Mon–Fri
@@ -59,6 +60,7 @@ export const LOCATION_SEED: LocationSeed[] = [
     openDays: null,
     openFrom: null,
     openTo: null,
+    departmentCodes: null,
   },
   {
     name: 'Floor 1',
@@ -69,6 +71,7 @@ export const LOCATION_SEED: LocationSeed[] = [
     openDays: null,
     openFrom: null,
     openTo: null,
+    departmentCodes: null,
   },
   {
     name: 'Lobby Level1',
@@ -79,6 +82,7 @@ export const LOCATION_SEED: LocationSeed[] = [
     openDays: null,
     openFrom: null,
     openTo: null,
+    departmentCodes: null,
   },
   {
     name: 'Meeting Room 1',
@@ -89,6 +93,7 @@ export const LOCATION_SEED: LocationSeed[] = [
     openDays: WEEKDAYS,
     openFrom: '09:00',
     openTo: '18:00',
+    departmentCodes: ['EFM'], // single department -> mismatch test uses FSS
   },
   {
     name: 'Meeting Room 2',
@@ -99,6 +104,7 @@ export const LOCATION_SEED: LocationSeed[] = [
     openDays: WEEKDAYS,
     openFrom: '09:00',
     openTo: '18:00',
+    departmentCodes: ['EFM', 'FSS'], // multiple departments share this room
   },
   {
     name: 'Corridor Floor 1',
@@ -109,6 +115,7 @@ export const LOCATION_SEED: LocationSeed[] = [
     openDays: null,
     openFrom: null,
     openTo: null,
+    departmentCodes: null,
   },
   {
     name: 'Meeting Room 2',
@@ -119,6 +126,7 @@ export const LOCATION_SEED: LocationSeed[] = [
     openDays: MON_TO_SAT,
     openFrom: '09:00',
     openTo: '18:00',
+    departmentCodes: ['AVS'],
   },
 
   // ── Building B ────────────────────────────────────────────────────────────
@@ -131,6 +139,7 @@ export const LOCATION_SEED: LocationSeed[] = [
     openDays: null,
     openFrom: null,
     openTo: null,
+    departmentCodes: null,
   },
   {
     name: 'Floor 5',
@@ -141,6 +150,7 @@ export const LOCATION_SEED: LocationSeed[] = [
     openDays: null,
     openFrom: null,
     openTo: null,
+    departmentCodes: null,
   },
   {
     name: 'Utility Room',
@@ -151,6 +161,7 @@ export const LOCATION_SEED: LocationSeed[] = [
     openDays: ALL_WEEK,
     openFrom: '00:00',
     openTo: '23:59',
+    departmentCodes: ['ASS'],
   },
   {
     name: 'Sanitary Room',
@@ -161,6 +172,7 @@ export const LOCATION_SEED: LocationSeed[] = [
     openDays: WEEKDAYS,
     openFrom: '09:00',
     openTo: '18:00',
+    departmentCodes: ['EFM'],
   },
   {
     name: 'Meeting Toilet',
@@ -171,6 +183,7 @@ export const LOCATION_SEED: LocationSeed[] = [
     openDays: WEEKDAYS,
     openFrom: '09:00',
     openTo: '18:00',
+    departmentCodes: ['FSS'],
   },
   {
     name: 'Genset Room',
@@ -181,6 +194,7 @@ export const LOCATION_SEED: LocationSeed[] = [
     openDays: ALL_WEEK,
     openFrom: '09:00',
     openTo: '18:00',
+    departmentCodes: ['EFM', 'FSS', 'AVS', 'ASS'], // open to every department
   },
   {
     name: 'Pantry Floor 5',
@@ -191,6 +205,7 @@ export const LOCATION_SEED: LocationSeed[] = [
     openDays: null,
     openFrom: null,
     openTo: null,
+    departmentCodes: null,
   },
   {
     name: 'Corridor Floor 5',
@@ -201,5 +216,6 @@ export const LOCATION_SEED: LocationSeed[] = [
     openDays: null,
     openFrom: null,
     openTo: null,
+    departmentCodes: null,
   },
 ];

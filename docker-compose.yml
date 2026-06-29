@@ -1,8 +1,8 @@
-# Base hạ tầng: Postgres + Redis. Ở GỐC project nên `docker compose up -d` tự nạp
-# (và tự đọc .env ở gốc). Các override dev/prod nằm trong docker/.
-#   Hạ tầng:  docker compose up -d
-#   Dev:      docker compose -f docker-compose.yml -f docker/docker-compose.dev.yml up --build
-#   Prod:     docker compose -f docker-compose.yml -f docker/docker-compose.prod.yml up --build -d
+# Base infrastructure: Postgres + Redis. Lives at the project ROOT so `docker compose up -d`
+# picks it up automatically (and reads the root .env). The dev/prod overrides live in docker/.
+#   Infra: docker compose up -d
+#   Dev:   docker compose -f docker-compose.yml -f docker/docker-compose.dev.yml up --build
+#   Prod:  docker compose -f docker-compose.yml -f docker/docker-compose.prod.yml up --build -d
 services:
   postgres:
     image: postgres:16-alpine

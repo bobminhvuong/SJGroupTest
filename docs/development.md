@@ -114,7 +114,7 @@ npm run migration:revert
 ## Seed Data
 
 ```bash
-# Load 4 departments + 13 location nodes (run once after migration:run)
+# Load 4 departments + 15 location nodes (run once after migration:run)
 npm run seed
 ```
 
@@ -122,25 +122,26 @@ The seed is idempotent — re-running skips rows that already exist (matched by 
 
 **Departments:** EFM, FSS, AVS, ASS
 
-**Locations** (department is **not** stored on locations — it is supplied per booking):
+**Locations** (a meeting room lists its **allowed departments** — the Department Matching rule checks
+the booking's department against this set; structural nodes have none):
 
-| Building | Name | Number | Type | Capacity | Open Time |
-|---|---|---|---|---|---|
-| A | Building A | A | BUILDING | — | — |
-| A | Floor 1 | A-01 | FLOOR | — | — |
-| A | Lobby Level1 | A-01-Lobby | OTHER | — | — |
-| A | Meeting Room 1 | A-01-01 | MEETING_ROOM | 10 | Mon–Fri 09:00–18:00 |
-| A | Meeting Room 2 | A-01-02 | MEETING_ROOM | 50 | Mon–Fri 09:00–18:00 |
-| A | Corridor Floor 1 | A-01-Corridor | OTHER | — | — |
-| A | Meeting Room 3 | A-01-03 | MEETING_ROOM | 5 | Mon–Sat 09:00–18:00 |
-| B | Building B | B | BUILDING | — | — |
-| B | Floor 5 | B-05 | FLOOR | — | — |
-| B | Utility Room | B-05-11 | MEETING_ROOM | 30 | Always open |
-| B | Sanitary Room | B-05-12 | MEETING_ROOM | 10 | Mon–Fri 09:00–18:00 |
-| B | Meeting Toilet | B-05-13 | MEETING_ROOM | 10 | Mon–Fri 09:00–18:00 |
-| B | Genset Room | B-05-14 | MEETING_ROOM | 100 | Mon–Sun 09:00–18:00 |
-| B | Pantry Floor 5 | B-05-15 | OTHER | — | — |
-| B | Corridor Floor 5 | B-05-Corridor | OTHER | — | — |
+| Building | Name | Number | Type | Capacity | Open Time | Departments |
+|---|---|---|---|---|---|---|
+| A | Building A | A | BUILDING | — | — | — |
+| A | Floor 1 | A-01 | FLOOR | — | — | — |
+| A | Lobby Level1 | A-01-Lobby | OTHER | — | — | — |
+| A | Meeting Room 1 | A-01-01 | MEETING_ROOM | 10 | Mon–Fri 09:00–18:00 | EFM |
+| A | Meeting Room 2 | A-01-02 | MEETING_ROOM | 50 | Mon–Fri 09:00–18:00 | EFM, FSS |
+| A | Corridor Floor 1 | A-01-Corridor | OTHER | — | — | — |
+| A | Meeting Room 3 | A-01-03 | MEETING_ROOM | 5 | Mon–Sat 09:00–18:00 | AVS |
+| B | Building B | B | BUILDING | — | — | — |
+| B | Floor 5 | B-05 | FLOOR | — | — | — |
+| B | Utility Room | B-05-11 | MEETING_ROOM | 30 | Always open | ASS |
+| B | Sanitary Room | B-05-12 | MEETING_ROOM | 10 | Mon–Fri 09:00–18:00 | EFM |
+| B | Meeting Toilet | B-05-13 | MEETING_ROOM | 10 | Mon–Fri 09:00–18:00 | FSS |
+| B | Genset Room | B-05-14 | MEETING_ROOM | 100 | Mon–Sun 09:00–18:00 | EFM, FSS, AVS, ASS |
+| B | Pantry Floor 5 | B-05-15 | OTHER | — | — | — |
+| B | Corridor Floor 5 | B-05-Corridor | OTHER | — | — | — |
 
 ---
 
@@ -179,7 +180,7 @@ A coverage floor is enforced (`coverageThreshold` in `package.json`) over the bu
 E2E tests (`test/*.e2e-spec.ts`) run against the `booking_test` database:
 
 1. `test/setup-e2e.ts` overwrites `DB_*` env vars with `DB_TEST_*` before the app bootstraps.
-2. `prepareTestSchema()` drops + recreates the schema, runs all 4 migrations, and seeds data fresh for each suite.
+2. `prepareTestSchema()` drops + recreates the schema, runs all 6 migrations, and seeds data fresh for each suite.
 3. `truncateBookings()` clears the `bookings` table between individual booking tests.
 
 ---
@@ -237,7 +238,7 @@ src/
 │   ├── data-source.ts           # TypeORM CLI DataSource (separate from DI runtime)
 │   ├── migrations/              # 1782500000001..004
 │   └── seeds/
-│       ├── seed-data.ts         # raw data constants (4 depts + 13 locations)
+│       ├── seed-data.ts         # raw data constants (4 depts + 15 locations)
 │       ├── seed-runner.ts       # shared logic (used by CLI + e2e tests)
 │       └── seed.ts              # CLI entry point: npm run seed
 ├── app.module.ts                # wires modules + env validation + global ThrottlerGuard

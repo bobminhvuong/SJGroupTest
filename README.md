@@ -14,20 +14,26 @@ Built for **SJ Assignment 2026** — submitted to `luc.le@coe.surbana.tech`.
 
 **Booking rules enforced on every request:**
 
-1. **Department valid** — the booking's department must exist. *Design note:* department is recorded
-   per booking, **not** tied to a room (rooms are shared across departments), so this rule validates
-   that the department exists rather than matching a room-owned department.
+1. **Department matching** — the booking's department must be one of the room's **allowed departments**.
+   A room can permit several departments (many-to-many via `location_departments`); a booking whose
+   department is not in that set is rejected.
 2. **Capacity** — attendees must not exceed the room's capacity.
 3. **Open time** — booking window must fall within the room's allowed days and hours.
 4. **No overlap** — no two confirmed bookings may overlap on the same room. Enforced by two layers:
    a Redis distributed lock (fast path) **and** a Postgres GiST `EXCLUDE` constraint (the real
    guarantee, holds even if Redis is unavailable).
 
-> **Which node types are bookable is data-driven**: the `location_types.is_bookable` flag is the single
-> source of truth (read from the DB at runtime), not a hardcoded enum. By default only `MEETING_ROOM` is bookable.
+> **Node-type behaviour is data-driven** (not a hardcoded enum) — the `location_types` table is the single
+> source of truth, read at runtime:
+> - `is_bookable` — whether the type requires capacity + open hours and accepts bookings (default: only `MEETING_ROOM`).
+> - `allow_root` + `allowed_parent_types` — **placement rules**: where a type may sit in the tree.
+>   E.g. `BUILDING` is root-only; `FLOOR` must sit under `BUILDING`; `MEETING_ROOM` under `FLOOR`/`OFFICE`.
+>   Enforced on `POST`/`PATCH /locations` (returns `400` on violation).
 
 **Cross-cutting / operational features:**
 
+- **Data-driven placement rules** — each location type declares where it may sit in the tree (`allow_root`, `allowed_parent_types`); `POST`/`PATCH /locations` reject invalid hierarchies with a clear `400`.
+- **Web demo UI** — a self-contained Bootstrap page served at `/` (from `public/`) to exercise every endpoint (location tree, departments, bookings) without Postman or curl. The location form filters the Parent dropdown to valid types automatically.
 - **Health check** — `GET /api/v1/health` (Terminus) pings PostgreSQL + Redis for liveness/readiness probes.
 - **Security** — `helmet` headers, configurable CORS (`CORS_ORIGIN`), and global rate limiting (`@nestjs/throttler`, 60 req/min per IP).
 - **Config safety** — environment variables are validated at boot (fail-fast on missing/invalid values).
@@ -69,8 +75,8 @@ Built for **SJ Assignment 2026** — submitted to `luc.le@coe.surbana.tech`.
 ### 1 — Clone & install
 
 ```bash
-git clone <your-repo-url>
-cd <project-directory>
+git clone https://github.com/bobminhvuong/SJGroupTest.git
+cd SJGroupTest
 npm install
 cp .env.example .env   # then edit .env as needed
 ```
@@ -85,7 +91,7 @@ docker compose up -d
 
 ```bash
 npm run migration:run   # create all tables
-npm run seed            # load 4 departments + 13 locations
+npm run seed            # load 4 departments + 15 locations (with each room's allowed departments)
 ```
 
 ### 4 — Run the app
@@ -94,8 +100,26 @@ npm run seed            # load 4 departments + 13 locations
 npm run start:dev
 ```
 
+- **Web demo UI**: `http://localhost:3000/` — a self-contained Bootstrap single-page app to browse the
+  location tree and manage departments, locations & bookings (full CRUD + pagination), no extra tooling needed.
 - API base: `http://localhost:3000/api/v1`
 - Swagger UI: `http://localhost:3000/docs`
+
+---
+
+## Testing
+
+```bash
+npm run test        # unit tests (50 specs)
+npm run test:e2e    # end-to-end tests (21 specs)
+```
+
+> **e2e database:** e2e tests run against a separate `DB_TEST_*` database (default `booking_test`) so dev
+> data is never touched. They rebuild a clean schema (migrations + seed) on each run, but the database
+> must exist first. Create it once:
+> ```bash
+> docker exec booking-postgres psql -U postgres -c "CREATE DATABASE booking_test;"
+> ```
 
 ---
 
@@ -129,7 +153,8 @@ Base URL `http://localhost:3000/api/v1` — full reference in [`docs/api.md`](do
 | `GET` | `/bookings` | List (filter by `locationId`/`departmentId`/`date`/`status`, paginated) |
 | `GET` | `/bookings/:id` | Booking detail |
 | `POST` | `/bookings/:id/cancel` | Cancel (sets `status=CANCELLED`, frees the slot) |
-| `GET`/`POST` | `/departments` | List / create departments |
+| `GET`/`POST` | `/departments` | List (paginated) / create departments |
+| `GET`/`PATCH`/`DELETE` | `/departments/:id` | Detail / update / soft-delete a department |
 
 ---
 
@@ -168,7 +193,7 @@ src/
 │   └── typeorm.config.ts            # runtime TypeORM options (DI)
 ├── database/
 │   ├── data-source.ts               # TypeORM CLI DataSource (migrations/seed)
-│   ├── migrations/                  # 4 migrations, run in order
+│   ├── migrations/                  # 6 migrations, run in order
 │   └── seeds/                       # seed-data + seed-runner + seed (CLI)
 ├── app.module.ts                    # wires modules, env validation, throttler guard
 └── main.ts                          # bootstrap: helmet, CORS, global prefix, pipe, filter, Swagger

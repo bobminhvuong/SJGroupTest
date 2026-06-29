@@ -1,6 +1,6 @@
-# Override DEV — chạy CÙNG base ở gốc (base phải là -f đầu tiên):
+# DEV override — runs TOGETHER with the base at root (base must be the first -f):
 #   docker compose -f docker-compose.yml -f docker/docker-compose.dev.yml up --build
-# Path relative tính theo thư mục file -f đầu (= gốc project) -> dùng "." và "docker/".
+# Relative paths are resolved from the first -f file's dir (= project root) -> use "." and "docker/".
 services:
   app:
     build:
@@ -9,7 +9,7 @@ services:
     container_name: booking-app-dev
     env_file: .env
     environment:
-      # Trong mạng compose, host DB/Redis là TÊN SERVICE, không phải localhost
+      # Inside the compose network, the DB/Redis host is the SERVICE NAME, not localhost
       NODE_ENV: development
       DB_HOST: postgres
       REDIS_HOST: redis
@@ -17,7 +17,7 @@ services:
       - '${PORT:-3000}:3000'
     volumes:
       - .:/app
-      - /app/node_modules # giữ node_modules trong container, không bị host đè
+      - /app/node_modules # keep node_modules inside the container, not overridden by the host
     depends_on:
       postgres:
         condition: service_healthy

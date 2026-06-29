@@ -9,7 +9,7 @@ stages:
   - build
   - docker
 
-# Template chung cho job chạy bằng Node (cache node_modules theo lock file)
+# Shared template for Node jobs (caches node_modules keyed by the lock file)
 .node:
   image: node:20-alpine
   cache:
@@ -36,7 +36,7 @@ test:unit:
   script:
     - npm run test
 
-# ── E2E test (cần Postgres + Redis thật, dùng bộ biến DB_TEST_*) ─────────────
+# ── E2E test (needs real Postgres + Redis; uses the DB_TEST_* variable set) ──
 test:e2e:
   extends: .node
   stage: test
@@ -58,10 +58,8 @@ test:e2e:
     REDIS_PORT: '6379'
   script:
     - npm run test:e2e
-  # Tạm cho phép fail vì e2e test thuộc Phase 3 (chưa viết). Bỏ dòng này khi đã có test.
-  allow_failure: true
 
-# ── Build (compile TS -> dist, giữ artifact cho job docker) ──────────────────
+# ── Build (compile TS -> dist; keep the artifact for the docker job) ─────────
 build:
   extends: .node
   stage: build
@@ -72,7 +70,7 @@ build:
       - dist/
     expire_in: 1 day
 
-# ── Docker build & push (chỉ main hoặc tag) ─────────────────────────────────
+# ── Docker build & push (main or tag only) ──────────────────────────────────
 docker:build:
   stage: docker
   image: docker:27

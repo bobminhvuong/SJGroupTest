@@ -16,10 +16,36 @@ async function bootstrap() {
   // Logger: use pino instead of Nest's default logger.
   app.useLogger(app.get(Logger));
 
-  // Security headers + CORS (origin configurable via CORS_ORIGIN; permissive in dev).
-  app.use(helmet());
+  // Security headers + CORS. Origin is explicit via CORS_ORIGIN (comma-separated).
+  // In production we DENY by default when it is unset (never reflect every origin with
+  // credentials); in dev we stay permissive for convenience.
+  //
+  // CSP: Helmet's default blocks inline <script> and inline on* handlers, which kills the
+  // bundled first-party demo page at public/index.html (all its logic is inline). We relax
+  // ONLY script-src/script-src-attr to allow inline for this trusted same-origin page; every
+  // other Helmet protection (and the rest of the CSP) stays at the secure default. The API
+  // itself returns JSON, so this does not widen any real attack surface.
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        useDefaults: true,
+        directives: {
+          'script-src': ["'self'", "'unsafe-inline'"],
+          'script-src-attr': ["'unsafe-inline'"],
+        },
+      },
+    }),
+  );
+  const corsOrigins = process.env.CORS_ORIGIN?.split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
   app.enableCors({
-    origin: process.env.CORS_ORIGIN?.split(',') ?? true,
+    origin:
+      corsOrigins && corsOrigins.length > 0
+        ? corsOrigins
+        : process.env.NODE_ENV === 'production'
+          ? false
+          : true,
     credentials: true,
   });
 
@@ -28,7 +54,8 @@ async function bootstrap() {
   app.enableShutdownHooks();
 
   // Serve public/ at root — index.html accessible at http://localhost:3000/
-  app.useStaticAssets(join(__dirname, '..', '..', 'public'));
+  // Runtime entry is dist/main.js, so __dirname is <project>/dist -> one level up to public/.
+  app.useStaticAssets(join(__dirname, '..', 'public'));
 
   app.setGlobalPrefix('api/v1');
 

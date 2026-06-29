@@ -1,11 +1,11 @@
 # ============================================================================
-# Dockerfile DEV — chạy start:dev (hot-reload). Source mount qua compose volume.
-# Build context = thư mục gốc project (xem docker-compose.dev.yml)
+# DEV Dockerfile — runs start:dev (hot-reload). Source is mounted via compose volume.
+# Build context = project root (see docker-compose.dev.yml)
 # ============================================================================
 FROM node:20-alpine
 WORKDIR /app
 
-# Cài full deps (gồm devDependencies cho ts-node/nest watch)
+# Install full deps (including devDependencies for ts-node/nest watch)
 COPY package*.json ./
 RUN npm install
 

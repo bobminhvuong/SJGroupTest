@@ -1,5 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  ArrayUnique,
+  IsArray,
+  IsBoolean,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 
 export class CreateLocationTypeDto {
   @ApiProperty({
@@ -27,4 +34,27 @@ export class CreateLocationTypeDto {
   @IsOptional()
   @IsBoolean()
   isBookable?: boolean;
+
+  @ApiPropertyOptional({
+    example: false,
+    default: false,
+    description: 'May a node of this type be a root (no parent)? e.g. BUILDING = true',
+  })
+  @IsOptional()
+  @IsBoolean()
+  allowRoot?: boolean;
+
+  @ApiPropertyOptional({
+    type: [String],
+    example: ['FLOOR', 'OFFICE'],
+    description:
+      'Parent type codes a node of this type may sit under (empty = root only). ' +
+      'Enforces the location-placement rule at create/update time.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  @MaxLength(50, { each: true })
+  allowedParentTypes?: string[];
 }

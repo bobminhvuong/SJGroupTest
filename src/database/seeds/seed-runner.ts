@@ -52,6 +52,16 @@ export async function seedDatabase(
         );
       }
 
+      const departments = (seed.departmentCodes ?? []).map((code) => {
+        const dept = deptByCode.get(code);
+        if (!dept) {
+          throw new Error(
+            `Department "${code}" referenced by "${seed.locationNumber}" was not seeded.`,
+          );
+        }
+        return dept;
+      });
+
       const location = locRepo.create({
         name: seed.name,
         locationNumber: seed.locationNumber,
@@ -61,6 +71,7 @@ export async function seedDatabase(
         openFrom: seed.openFrom,
         openTo: seed.openTo,
         openDays: seed.openDays,
+        departments, // writes location_departments join rows
       });
       const saved = await locRepo.save(location);
       locByNumber.set(seed.locationNumber, saved);

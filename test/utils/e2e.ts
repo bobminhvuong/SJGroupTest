@@ -7,6 +7,8 @@ import { CreateDepartmentTable1782500000001 } from '../../src/database/migration
 import { CreateLocationTable1782500000002 } from '../../src/database/migrations/1782500000002-CreateLocationTable';
 import { CreateBookingTable1782500000003 } from '../../src/database/migrations/1782500000003-CreateBookingTable';
 import { AddLocationTypeTable1782500000004 } from '../../src/database/migrations/1782500000004-AddLocationTypeTable';
+import { CreateLocationDepartments1782500000005 } from '../../src/database/migrations/1782500000005-CreateLocationDepartments';
+import { AddLocationTypeRules1782500000006 } from '../../src/database/migrations/1782500000006-AddLocationTypeRules';
 import { seedDatabase } from '../../src/database/seeds/seed-runner';
 import { Department } from '../../src/modules/department/entities/department.entity';
 import { LocationTypeEntity } from '../../src/modules/location/entities/location-type.entity';
@@ -32,6 +34,8 @@ export async function prepareTestSchema(): Promise<void> {
       CreateLocationTable1782500000002,
       CreateBookingTable1782500000003,
       AddLocationTypeTable1782500000004,
+      CreateLocationDepartments1782500000005,
+      AddLocationTypeRules1782500000006,
     ],
     synchronize: false,
   });

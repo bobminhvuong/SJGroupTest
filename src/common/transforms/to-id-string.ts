@@ -10,3 +10,16 @@ export const ToIdString = (): PropertyDecorator =>
       ? String(value)
       : value,
   );
+
+/**
+ * Array variant of {@link ToIdString}: normalizes every element (number | bigint) -> string.
+ * Non-array values pass through unchanged (validators report the type error).
+ */
+export const ToIdStringArray = (): PropertyDecorator =>
+  Transform(({ value }: { value: unknown }) =>
+    Array.isArray(value)
+      ? (value as unknown[]).map((v) =>
+          typeof v === 'number' || typeof v === 'bigint' ? String(v) : v,
+        )
+      : value,
+  );

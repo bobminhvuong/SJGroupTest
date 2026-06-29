@@ -4,6 +4,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import {
   DataSource,
@@ -12,10 +13,11 @@ import {
   Repository,
 } from 'typeorm';
 import { LockService } from '../../shared/cache/cache.contracts';
-import { LockKey, LockTtl } from '../../shared/cache/cache-keys';
+import { LockKey } from '../../shared/cache/cache-keys';
 import { BookingValidationException } from '../../common/exceptions/booking-validation.exception';
 import {
   checkOpenHours,
+  dayRangeInTz,
   formatOpenTimeRule,
 } from '../../common/open-time/open-time';
 import { Location } from '../location/entities/location.entity';
@@ -34,6 +36,11 @@ export class BookingService {
   /** Postgres exclusion_violation — raised by the no_overlap_booking constraint. */
   private static readonly PG_EXCLUSION_VIOLATION = '23P01';
 
+  /** Business timezone used to evaluate open hours / date filters (configurable). */
+  private readonly timeZone: string;
+  /** Distributed-lock TTL (ms), read once from config (no hardcoded env in helpers). */
+  private readonly lockTtlMs: number;
+
   constructor(
     @InjectRepository(Booking)
     private readonly bookingRepo: Repository<Booking>,
@@ -42,7 +49,11 @@ export class BookingService {
     private readonly locationService: LocationService,
     private readonly lock: LockService,
     private readonly dataSource: DataSource,
-  ) {}
+    private readonly config: ConfigService,
+  ) {
+    this.timeZone = this.config.get<string>('APP_TIMEZONE', 'Asia/Ho_Chi_Minh');
+    this.lockTtlMs = Number(this.config.get('BOOKING_LOCK_TTL_MS', 5000));
+  }
 
   // ── CREATE (validate 3 rules + overlap) ────────────────────────────────────────
   async create(dto: CreateBookingDto): Promise<Booking> {
@@ -56,9 +67,22 @@ export class BookingService {
     //  1) Redis lock (per room + day) — fast path, avoids contention across instances.
     //  2) A transaction + the GiST EXCLUDE constraint — the real guarantee; holds even
     //     if Redis is down or the lock TTL expires mid-write.
+    // If Redis itself is unreachable we DEGRADE GRACEFULLY: skip the fast-path lock and
+    // rely on layer 2 (the DB constraint) so a Redis outage never blocks bookings.
     const lockKey = LockKey.booking(room.id, dto.startTime.slice(0, 10));
-    const token = await this.lock.acquireLock(lockKey, LockTtl.bookingMs);
-    if (!token) {
+    let token: string | null = null;
+    let lockAvailable = true;
+    try {
+      token = await this.lock.acquireLock(lockKey, this.lockTtlMs);
+    } catch (err) {
+      lockAvailable = false;
+      this.logger.warn(
+        `Redis lock unavailable, falling back to DB constraint: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+    if (lockAvailable && !token) {
       this.reject(dto, 'concurrent booking in progress for this room/day');
       throw new ConflictException('Time slot already booked');
     }
@@ -97,7 +121,17 @@ export class BookingService {
         }
       });
     } finally {
-      await this.lock.releaseLock(lockKey, token);
+      if (token) {
+        try {
+          await this.lock.releaseLock(lockKey, token);
+        } catch (err) {
+          this.logger.warn(
+            `Failed to release booking lock: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        }
+      }
     }
   }
 
@@ -124,10 +158,10 @@ export class BookingService {
     if (departmentId)
       qb.andWhere('b.department_id = :departmentId', { departmentId });
     if (date) {
-      qb.andWhere('b.start_time >= :from AND b.start_time < :to', {
-        from: `${date}T00:00:00`,
-        to: `${date}T23:59:59.999`,
-      });
+      // Half-open [from, to) bounded by the calendar day in the business timezone,
+      // consistent with how start_time is stored (timestamptz) and validated.
+      const { from, to } = dayRangeInTz(date, this.timeZone);
+      qb.andWhere('b.start_time >= :from AND b.start_time < :to', { from, to });
     }
     if (status) qb.andWhere('b.status = :status', { status });
 
@@ -184,6 +218,20 @@ export class BookingService {
       throw new BookingValidationException('Department not found');
     }
 
+    // 1b) Department Matching — the booking department must be one of the room's
+    //     allowed departments (a room can serve several). Empty set = no restriction,
+    //     but the service requires >= 1 department on every bookable room.
+    const allowed = (room.departments ?? []).map((d) => d.id);
+    if (allowed.length > 0 && !allowed.includes(dto.departmentId)) {
+      this.reject(
+        dto,
+        `department ${dto.departmentId} not allowed for room ${room.locationNumber} (allowed: ${allowed.join(', ')})`,
+      );
+      throw new BookingValidationException(
+        `Department (${dept.code}) is not allowed to book room ${room.locationNumber}`,
+      );
+    }
+
     // 2) Capacity
     if (dto.attendees > (room.capacity ?? 0)) {
       this.reject(
@@ -195,12 +243,17 @@ export class BookingService {
       );
     }
 
-    // 3) Open time
-    const check = checkOpenHours(dto.startTime, dto.endTime, {
-      openDays: room.openDays ?? [],
-      openFrom: room.openFrom ?? '',
-      openTo: room.openTo ?? '',
-    });
+    // 3) Open time — evaluated on the absolute instants in the business timezone.
+    const check = checkOpenHours(
+      new Date(dto.startTime),
+      new Date(dto.endTime),
+      {
+        openDays: room.openDays ?? [],
+        openFrom: room.openFrom ?? '',
+        openTo: room.openTo ?? '',
+      },
+      this.timeZone,
+    );
     if (!check.ok) {
       this.reject(dto, `outside open hours: ${check.reason}`);
       const rule = formatOpenTimeRule({

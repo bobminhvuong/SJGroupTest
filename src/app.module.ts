@@ -3,6 +3,8 @@ import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { randomUUID } from 'crypto';
+import type { IncomingMessage, ServerResponse } from 'http';
 import { LoggerModule } from 'nestjs-pino';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -28,6 +30,15 @@ import { BookingModule } from './modules/booking/booking.module';
             ? { target: 'pino-pretty', options: { singleLine: true } }
             : undefined,
         autoLogging: true,
+        // Correlation id: reuse an inbound X-Request-Id or mint one, and echo it back.
+        // pino binds it to `req.id` so every log line of a request is correlated.
+        genReqId: (req: IncomingMessage, res: ServerResponse) => {
+          const existing = req.headers['x-request-id'];
+          const id =
+            (Array.isArray(existing) ? existing[0] : existing) ?? randomUUID();
+          res.setHeader('X-Request-Id', id);
+          return id;
+        },
       },
     }),
     // Basic abuse protection: 60 requests / 60s per IP (global).

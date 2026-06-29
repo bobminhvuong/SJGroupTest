@@ -19,6 +19,11 @@ export const REDIS_CLIENT = 'REDIS_CLIENT';
 export class RedisCacheService extends CacheService implements OnModuleDestroy {
   private readonly logger = new Logger(RedisCacheService.name);
 
+  /** Stampede protection tuning (single rebuilder; waiters poll for the result). */
+  private static readonly REBUILD_LOCK_TTL_SEC = 10;
+  private static readonly REBUILD_WAIT_ATTEMPTS = 10;
+  private static readonly REBUILD_WAIT_INTERVAL_MS = 50;
+
   constructor(@Inject(REDIS_CLIENT) private readonly client: Redis) {
     super();
   }
@@ -77,12 +82,18 @@ export class RedisCacheService extends CacheService implements OnModuleDestroy {
     // Stampede protection: only 1 process holds the rebuild lock.
     const lockKey = `lock:rebuild:${key}`;
     const locked =
-      (await this.client.set(lockKey, '1', 'EX', 10, 'NX')) === 'OK';
+      (await this.client.set(
+        lockKey,
+        '1',
+        'EX',
+        RedisCacheService.REBUILD_LOCK_TTL_SEC,
+        'NX',
+      )) === 'OK';
 
     if (!locked) {
-      // Another process is rebuilding -> wait up to 10 × 50ms = 500ms.
-      for (let i = 0; i < 10; i++) {
-        await this.sleep(50);
+      // Another process is rebuilding -> poll briefly for the freshly-built value.
+      for (let i = 0; i < RedisCacheService.REBUILD_WAIT_ATTEMPTS; i++) {
+        await this.sleep(RedisCacheService.REBUILD_WAIT_INTERVAL_MS);
         const value = await this.get<T>(key);
         if (value !== null) return value;
       }

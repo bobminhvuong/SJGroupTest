@@ -4,10 +4,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { ILike, Repository } from 'typeorm';
+import { ILike, Not, Repository } from 'typeorm';
 import { PagedResult } from '../../common/dto/paged-result';
 import { CreateDepartmentDto } from './dto/create-department.dto';
 import { ListDepartmentDto } from './dto/list-department.dto';
+import { UpdateDepartmentDto } from './dto/update-department.dto';
 import { Department } from './entities/department.entity';
 
 @Injectable()
@@ -63,5 +64,40 @@ export class DepartmentService {
     const dept = await this.departmentRepo.findOne({ where: { id } });
     if (!dept) throw new NotFoundException('Department not found');
     return dept;
+  }
+
+  /** Update department; keep `code`/`name` unique (case-insensitive, excluding itself). */
+  async update(id: string, dto: UpdateDepartmentDto): Promise<Department> {
+    const dept = await this.findOne(id);
+
+    if (dto.code !== undefined) {
+      const code = dto.code.trim();
+      const clash = await this.departmentRepo.findOne({
+        where: { code: ILike(code), id: Not(id) },
+      });
+      if (clash) {
+        throw new ConflictException(`Department code "${code}" already exists`);
+      }
+      dept.code = code;
+    }
+
+    if (dto.name !== undefined) {
+      const name = dto.name.trim();
+      const clash = await this.departmentRepo.findOne({
+        where: { name: ILike(name), id: Not(id) },
+      });
+      if (clash) {
+        throw new ConflictException(`Department name "${name}" already exists`);
+      }
+      dept.name = name;
+    }
+
+    return this.departmentRepo.save(dept);
+  }
+
+  /** Soft-delete a department (default app policy; rows keep deleted_at). */
+  async remove(id: string): Promise<void> {
+    const dept = await this.findOne(id);
+    await this.departmentRepo.softRemove(dept);
   }
 }

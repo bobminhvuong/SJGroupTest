@@ -16,10 +16,11 @@ describe('Booking (e2e)', () => {
   let app: INestApplication;
   const base = '/api/v1/bookings';
 
-  let roomId: string; // A-01-01 (EFM, cap 10, MON-FRI)
+  let roomId: string; // A-01-01 (EFM only, cap 10, MON-FRI)
+  let room2Id: string; // A-01-02 (EFM + FSS, cap 50, MON-FRI)
   let lobbyId: string; // A-01-Lobby (not bookable)
   let efmId: string;
-  let fssId: string; // different department -> department mismatch
+  let fssId: string; // not allowed on A-01-01, but allowed on A-01-02
 
   const slot = (startHour: number, endHour: number) => ({
     locationId: roomId,
@@ -33,6 +34,7 @@ describe('Booking (e2e)', () => {
     await prepareTestSchema();
     app = await createTestApp();
     roomId = await locationIdByNumber(app, 'A-01-01');
+    room2Id = await locationIdByNumber(app, 'A-01-02');
     lobbyId = await locationIdByNumber(app, 'A-01-Lobby');
     efmId = await departmentIdByCode(app, 'EFM');
     fssId = await departmentIdByCode(app, 'FSS');
@@ -54,11 +56,18 @@ describe('Booking (e2e)', () => {
     expect(res.body).toMatchObject({ status: 'CONFIRMED', locationId: roomId });
   });
 
-  it('rejects a department mismatch (400)', () =>
+  it('rejects a department not allowed for the room (400)', () =>
+    // Room A-01-01 allows only EFM; FSS exists but is not permitted -> Department Matching.
     request(app.getHttpServer())
       .post(base)
       .send({ ...slot(10, 11), departmentId: fssId })
       .expect(400));
+
+  it('allows any of a room’s multiple departments (FSS on A-01-02, 201)', () =>
+    request(app.getHttpServer())
+      .post(base)
+      .send({ ...slot(10, 11), locationId: room2Id, departmentId: fssId })
+      .expect(201));
 
   it('rejects exceeding capacity (400)', () =>
     request(app.getHttpServer())
@@ -114,7 +123,7 @@ describe('Booking (e2e)', () => {
     const res = await request(app.getHttpServer())
       .get(`${base}?locationId=${roomId}`)
       .expect(200);
-    expect(Array.isArray(res.body)).toBe(true);
-    expect((res.body as unknown[]).length).toBe(1);
+    expect(Array.isArray(res.body.data)).toBe(true);
+    expect((res.body.data as unknown[]).length).toBe(1);
   });
 });

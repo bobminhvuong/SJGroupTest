@@ -19,6 +19,23 @@ export class LocationTypeEntity {
   /** Source of truth: only bookable types require capacity + open hours and accept bookings. */
   @Column({ name: 'is_bookable', type: 'boolean', default: false })
   isBookable!: boolean;
+
+  /** May a node of this type exist as a root (no parent)? e.g. BUILDING = true. */
+  @Column({ name: 'allow_root', type: 'boolean', default: false })
+  allowRoot!: boolean;
+
+  /**
+   * Parent type codes a node of this type may be placed under (empty = root only).
+   * Backs the location-placement rule enforced in LocationService.create/update.
+   */
+  @Column({
+    name: 'allowed_parent_types',
+    type: 'varchar',
+    length: 50,
+    array: true,
+    default: '{}',
+  })
+  allowedParentTypes!: string[];
 }
 
 /**

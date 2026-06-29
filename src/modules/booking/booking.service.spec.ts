@@ -23,9 +23,10 @@ describe('BookingService', () => {
   let locationService: { getEntityOrFail: jest.Mock };
   let redis: { acquireLock: jest.Mock; releaseLock: jest.Mock };
   let dataSource: { transaction: jest.Mock };
+  let config: { get: jest.Mock };
   let overlapResult: Booking | null;
 
-  /** Sample bookable room: capacity 10, MON-FRI 09:00-18:00. */
+  /** Sample bookable room: capacity 10, MON-FRI 09:00-18:00, department EFM only. */
   const room = (): Location =>
     ({
       id: 'room-1',
@@ -36,6 +37,7 @@ describe('BookingService', () => {
       openTo: '18:00:00',
       openDays: [1, 2, 3, 4, 5],
       isBookable: true,
+      departments: [{ id: 'dept-efm', code: 'EFM' }],
     }) as unknown as Location;
 
   const validDto = () => ({
@@ -80,12 +82,18 @@ describe('BookingService', () => {
       ),
     };
 
+    // ConfigService stub: return the provided default (APP_TIMEZONE, lock TTL).
+    config = {
+      get: jest.fn((_key: string, def?: unknown) => def),
+    };
+
     service = new BookingService(
       bookingRepo as never,
       departmentRepo as never,
       locationService as never,
       redis,
       dataSource as never,
+      config as never,
     );
   });
 
@@ -124,6 +132,32 @@ describe('BookingService', () => {
     const dto = { ...validDto(), departmentId: 'dept-invalid' };
     await expect(service.create(dto)).rejects.toThrow('Department not found');
     expect(redis.acquireLock).not.toHaveBeenCalled();
+  });
+
+  it('rejects a department not allowed for the room (department matching)', async () => {
+    // Room allows only EFM; the existing department FSS is valid but not permitted here.
+    departmentRepo.findOne.mockResolvedValue({ id: 'dept-fss', code: 'FSS' });
+    const dto = { ...validDto(), departmentId: 'dept-fss' };
+    await expect(service.create(dto)).rejects.toThrow(
+      /not allowed to book room/,
+    );
+    expect(redis.acquireLock).not.toHaveBeenCalled();
+  });
+
+  it('allows any of a room’s multiple departments', async () => {
+    locationService.getEntityOrFail.mockResolvedValue({
+      ...room(),
+      departments: [
+        { id: 'dept-efm', code: 'EFM' },
+        { id: 'dept-fss', code: 'FSS' },
+      ],
+    });
+    departmentRepo.findOne.mockResolvedValue({ id: 'dept-fss', code: 'FSS' });
+    const result = await service.create({
+      ...validDto(),
+      departmentId: 'dept-fss',
+    });
+    expect(result.status).toBe(BookingStatus.CONFIRMED);
   });
 
   it('rejects when attendees exceed capacity', async () => {

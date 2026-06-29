@@ -1,6 +1,6 @@
-# Override PROD — chạy CÙNG base ở gốc (base phải là -f đầu tiên):
+# PROD override — runs TOGETHER with the base at root (base must be the first -f):
 #   docker compose -f docker-compose.yml -f docker/docker-compose.prod.yml up --build -d
-# Path relative tính theo thư mục file -f đầu (= gốc project) -> dùng "." và "docker/".
+# Relative paths are resolved from the first -f file's dir (= project root) -> use "." and "docker/".
 services:
   app:
     build:

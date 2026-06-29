@@ -54,15 +54,11 @@ export const getCacheConfig = (name: CacheModuleName): ModuleCacheConfig => {
 /**
  * Lock key for the business lock (anti double-booking) — SEPARATE from the cache
  * rebuild lock inside remember(). This is a per-room + per-day key.
+ *
+ * The lock TTL is NOT here: it is read from ConfigService (BOOKING_LOCK_TTL_MS) inside
+ * BookingService so config stays centralized (no process.env access in helpers).
  */
 export const LockKey = {
   booking: (locationId: string, dateISO: string): string =>
     `lock:booking:${locationId}:${dateISO}`,
-} as const;
-
-/** Business lock TTL (ms). A getter so env is read after ConfigModule loads .env. */
-export const LockTtl = {
-  get bookingMs(): number {
-    return Number(process.env.BOOKING_LOCK_TTL_MS ?? 5000);
-  },
 } as const;

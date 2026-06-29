@@ -29,6 +29,6 @@ import {
     { provide: CacheService, useClass: RedisCacheService },
     { provide: LockService, useClass: RedisLockService },
   ],
-  exports: [CacheService, LockService],
+  exports: [CacheService, LockService, REDIS_CLIENT],
 })
 export class CacheModule {}

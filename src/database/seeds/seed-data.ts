@@ -14,7 +14,12 @@
  * runner maps it into the repository on insert.
  */
 
-export type LocationType = 'BUILDING' | 'FLOOR' | 'OFFICE' | 'MEETING_ROOM' | 'OTHER';
+export type LocationType =
+  | 'BUILDING'
+  | 'FLOOR'
+  | 'OFFICE'
+  | 'MEETING_ROOM'
+  | 'OTHER';
 
 export interface DepartmentSeed {
   code: string;

@@ -46,7 +46,9 @@ export class DepartmentService {
       .orderBy('d.code', 'ASC');
 
     if (search?.trim()) {
-      qb.where('d.code ILIKE :q OR d.name ILIKE :q', { q: `%${search.trim()}%` });
+      qb.where('d.code ILIKE :q OR d.name ILIKE :q', {
+        q: `%${search.trim()}%`,
+      });
     }
 
     const [data, total] = await qb

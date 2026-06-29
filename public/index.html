@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Location & Booking Demo</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+  <style>
+    body { background: #f8f9fa; }
+    .nav-tabs .nav-link { color: #495057; font-weight: 500; }
+    .nav-tabs .nav-link.active { color: #0d6efd; font-weight: 600; }
+    .card { border: none; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+    .tree-node { cursor: pointer; border-left: 3px solid #dee2e6; margin-left: 16px; padding-left: 10px; margin-top: 6px; }
+    .tree-node:hover { border-left-color: #0d6efd; background: #f0f4ff; border-radius: 0 4px 4px 0; }
+    .tree-node.bookable { border-left-color: #198754; }
+    .badge-type { font-size: .72rem; }
+    .parent-card { cursor: pointer; transition: box-shadow .15s; }
+    .parent-card:hover { box-shadow: 0 4px 12px rgba(13,110,253,.15) !important; }
+    .spinner-wrap { display:flex; justify-content:center; padding:2rem; }
+    .toast-container { z-index: 9999; }
+    #treeContainer .root-node { border-left: 3px solid #0d6efd; }
+    .action-bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  </style>
+</head>
+<body>
+
+<!-- Toast -->
+<div class="toast-container position-fixed top-0 end-0 p-3">
+  <div id="toast" class="toast align-items-center text-white border-0" role="alert">
+    <div class="d-flex">
+      <div class="toast-body" id="toastMsg"></div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+    </div>
+  </div>
+</div>
+
+<div class="container-fluid py-4 px-4">
+  <div class="d-flex align-items-center mb-4 gap-3">
+    <i class="bi bi-building fs-2 text-primary"></i>
+    <div>
+      <h4 class="mb-0 fw-bold">Location &amp; Booking</h4>
+      <small class="text-muted">Demo — API: <code id="apiBaseLabel"></code></small>
+    </div>
+    <div class="ms-auto">
+      <input id="apiBase" class="form-control form-control-sm" style="width:260px" placeholder="/api/v1" value="/api/v1" />
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <ul class="nav nav-tabs mb-3" id="mainTab">
+    <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabLocation"><i class="bi bi-geo-alt me-1"></i>Location</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabDept"><i class="bi bi-people me-1"></i>Department</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabBooking"><i class="bi bi-calendar-check me-1"></i>Booking</button></li>
+  </ul>
+
+  <div class="tab-content">
+
+    <!-- ═══════════════ TAB 1: LOCATION ═══════════════ -->
+    <div class="tab-pane fade show active" id="tabLocation">
+      <div class="card mb-3">
+        <div class="card-body action-bar">
+          <button class="btn btn-primary btn-sm" onclick="openLocationForm()"><i class="bi bi-plus-lg me-1"></i>New Location</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="loadLocations()"><i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>
+          <input id="locSearch" class="form-control form-control-sm ms-auto" style="max-width:220px" placeholder="Search…" oninput="filterLocations()" />
+        </div>
+      </div>
+      <div id="locList" class="row g-3"></div>
+    </div>
+
+    <!-- ═══════════════ TAB 2: DEPARTMENT ═══════════════ -->
+    <div class="tab-pane fade" id="tabDept">
+      <div class="card mb-3">
+        <div class="card-body action-bar">
+          <button class="btn btn-primary btn-sm" onclick="openDeptForm()"><i class="bi bi-plus-lg me-1"></i>New Department</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="loadDepts()"><i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-body p-0">
+          <table class="table table-hover mb-0" id="deptTable">
+            <thead class="table-light">
+              <tr><th>#</th><th>Code</th><th>Name</th><th style="width:120px">Actions</th></tr>
+            </thead>
+            <tbody id="deptBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════ TAB 3: BOOKING ═══════════════ -->
+    <div class="tab-pane fade" id="tabBooking">
+      <div class="card mb-3">
+        <div class="card-body action-bar">
+          <button class="btn btn-primary btn-sm" onclick="openBookingForm()"><i class="bi bi-plus-lg me-1"></i>New Booking</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="loadBookings()"><i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>
+          <select id="bkgLocFilter" class="form-select form-select-sm ms-auto" style="max-width:220px" onchange="loadBookings()"><option value="">All Rooms</option></select>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-body p-0">
+          <table class="table table-hover mb-0">
+            <thead class="table-light">
+              <tr><th>#</th><th>Room</th><th>Department</th><th>Attendees</th><th>Start</th><th>End</th><th>Status</th><th style="width:100px">Actions</th></tr>
+            </thead>
+            <tbody id="bookingBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ MODAL: Location Tree ═══════════════ -->
+<div class="modal fade" id="locTreeModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-diagram-3 me-2"></i><span id="treeTitle">Location Tree</span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="treeContainer"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ MODAL: Location Form ═══════════════ -->
+<div class="modal fade" id="locFormModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="locFormTitle">Location</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="locId" />
+        <div class="mb-3">
+          <label class="form-label">Name <span class="text-danger">*</span></label>
+          <input id="locName" class="form-control" placeholder="Meeting Room 1" />
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Location Number <span class="text-danger">*</span></label>
+          <input id="locNumber" class="form-control" placeholder="A-01-01" />
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Type <span class="text-danger">*</span></label>
+          <select id="locType" class="form-select" onchange="toggleBookableFields()">
+            <option value="BUILDING">BUILDING</option>
+            <option value="FLOOR">FLOOR</option>
+            <option value="OFFICE">OFFICE</option>
+            <option value="MEETING_ROOM">MEETING_ROOM</option>
+            <option value="OTHER">OTHER</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Parent</label>
+          <select id="locParent" class="form-select"><option value="">— none (root) —</option></select>
+        </div>
+        <div id="bookableFields">
+          <div class="mb-3">
+            <label class="form-label">Capacity</label>
+            <input id="locCapacity" type="number" class="form-control" placeholder="10" min="1" />
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Open Time Rule</label>
+            <input id="locOpenTime" class="form-control" placeholder="MON-FRI:09:00-18:00 or ALWAYS" />
+            <div class="form-text">Format: <code>MON-FRI:09:00-18:00</code> · <code>MON-SAT:09:00-18:00</code> · <code>ALWAYS</code></div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary" onclick="saveLocation()"><i class="bi bi-check-lg me-1"></i>Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ MODAL: Department Form ═══════════════ -->
+<div class="modal fade" id="deptFormModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="deptFormTitle">Department</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="deptId" />
+        <div class="mb-3">
+          <label class="form-label">Code <span class="text-danger">*</span></label>
+          <input id="deptCode" class="form-control" placeholder="EFM" maxlength="32" />
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Name <span class="text-danger">*</span></label>
+          <input id="deptName" class="form-control" placeholder="Engineering Facilities Management" />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary" onclick="saveDept()"><i class="bi bi-check-lg me-1"></i>Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ MODAL: Booking Form ═══════════════ -->
+<div class="modal fade" id="bookingFormModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="bookingFormTitle">Booking</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="bkgId" />
+        <div class="mb-3">
+          <label class="form-label">Room (Location) <span class="text-danger">*</span></label>
+          <select id="bkgLocation" class="form-select"><option value="">Select room…</option></select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Department <span class="text-danger">*</span></label>
+          <select id="bkgDept" class="form-select"><option value="">Select department…</option></select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Attendees <span class="text-danger">*</span></label>
+          <input id="bkgAttendees" type="number" class="form-control" placeholder="5" min="1" />
+        </div>
+        <div class="row g-3">
+          <div class="col-6">
+            <label class="form-label">Start Time <span class="text-danger">*</span></label>
+            <input id="bkgStart" type="datetime-local" class="form-control" />
+          </div>
+          <div class="col-6">
+            <label class="form-label">End Time <span class="text-danger">*</span></label>
+            <input id="bkgEnd" type="datetime-local" class="form-control" />
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary" onclick="saveBooking()"><i class="bi bi-check-lg me-1"></i>Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════════════════
+const apiInput = document.getElementById('apiBase');
+const api = () => apiInput.value.replace(/\/$/, '') || '/api/v1';
+document.getElementById('apiBaseLabel').textContent = apiInput.value;
+apiInput.addEventListener('input', () => {
+  document.getElementById('apiBaseLabel').textContent = apiInput.value;
+});
+
+// ═══════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════
+async function req(method, path, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(api() + path, opts);
+  const text = await r.text();
+  let data;
+  try { data = JSON.parse(text); } catch { data = text; }
+  if (!r.ok) throw data;
+  return data;
+}
+
+function toast(msg, ok = true) {
+  const el = document.getElementById('toast');
+  document.getElementById('toastMsg').textContent = msg;
+  el.className = `toast align-items-center text-white border-0 bg-${ok ? 'success' : 'danger'}`;
+  bootstrap.Toast.getOrCreateInstance(el, { delay: 3000 }).show();
+}
+
+function errMsg(e) {
+  if (typeof e === 'object' && e !== null) return e.message || JSON.stringify(e);
+  return String(e);
+}
+
+const typeBadge = {
+  BUILDING: 'primary', FLOOR: 'info', OFFICE: 'secondary',
+  MEETING_ROOM: 'success', OTHER: 'warning'
+};
+function badge(type) {
+  return `<span class="badge bg-${typeBadge[type] || 'secondary'} badge-type">${type}</span>`;
+}
+
+function fmtDt(s) {
+  if (!s) return '—';
+  return new Date(s).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' });
+}
+
+// ═══════════════════════════════════════════════════════
+// TAB LOCATION
+// ═══════════════════════════════════════════════════════
+let allLocations = [];
+
+async function loadLocations() {
+  const el = document.getElementById('locList');
+  el.innerHTML = '<div class="spinner-wrap"><div class="spinner-border text-primary"></div></div>';
+  try {
+    const data = await req('GET', '/locations/parents?page=1&limit=100');
+    allLocations = Array.isArray(data) ? data : (data.data || []);
+    renderLocations(allLocations);
+    // Also load all locations flat for parent select & booking room select
+    await loadAllFlat();
+  } catch (e) { el.innerHTML = `<div class="alert alert-danger">${errMsg(e)}</div>`; }
+}
+
+function renderLocations(list) {
+  const el = document.getElementById('locList');
+  if (!list.length) { el.innerHTML = '<p class="text-muted">No locations found.</p>'; return; }
+  el.innerHTML = list.map(loc => `
+    <div class="col-sm-6 col-md-4 col-lg-3">
+      <div class="card parent-card h-100" onclick="showTree('${loc.id}','${loc.name}')">
+        <div class="card-body">
+          <div class="d-flex align-items-start justify-content-between mb-2">
+            ${badge(loc.type)}
+            <div class="d-flex gap-1" onclick="event.stopPropagation()">
+              <button class="btn btn-sm btn-outline-primary p-1 lh-1" onclick="openLocationForm('${loc.id}')" title="Edit"><i class="bi bi-pencil"></i></button>
+              <button class="btn btn-sm btn-outline-danger p-1 lh-1" onclick="deleteLocation('${loc.id}','${loc.name}')" title="Delete"><i class="bi bi-trash"></i></button>
+            </div>
+          </div>
+          <h6 class="card-title mb-1 fw-semibold">${loc.name}</h6>
+          <small class="text-muted"><code>${loc.locationNumber}</code></small>
+          ${loc.isBookable ? `<div class="mt-2"><span class="badge bg-success-subtle text-success border border-success-subtle">Bookable</span></div>` : ''}
+        </div>
+        <div class="card-footer bg-transparent text-muted" style="font-size:.8rem">
+          <i class="bi bi-diagram-2 me-1"></i>Click to view tree
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function filterLocations() {
+  const q = document.getElementById('locSearch').value.toLowerCase();
+  renderLocations(allLocations.filter(l =>
+    l.name.toLowerCase().includes(q) || l.locationNumber.toLowerCase().includes(q)
+  ));
+}
+
+// flat list for selects
+let flatLocations = [];
+async function loadAllFlat() {
+  try {
+    const tree = await req('GET', '/locations/tree');
+    flatLocations = [];
+    flattenTree(tree, flatLocations);
+    populateLocSelect('locParent', flatLocations, true);
+    populateLocSelect('bkgLocFilter', flatLocations.filter(l => l.isBookable), false);
+    populateLocSelect('bkgLocation', flatLocations.filter(l => l.isBookable), false);
+  } catch {}
+}
+
+function flattenTree(nodes, out) {
+  for (const n of nodes || []) {
+    out.push(n);
+    flattenTree(n.children, out);
+  }
+}
+
+function populateLocSelect(id, list, withNone) {
+  const el = document.getElementById(id);
+  const cur = el.value;
+  el.innerHTML = withNone ? '<option value="">— none (root) —</option>' : '<option value="">All Rooms</option>';
+  list.forEach(l => {
+    const opt = document.createElement('option');
+    opt.value = l.id;
+    opt.textContent = `${l.locationNumber} — ${l.name}`;
+    el.appendChild(opt);
+  });
+  if (cur) el.value = cur;
+}
+
+// Tree modal
+async function showTree(rootId, name) {
+  document.getElementById('treeTitle').textContent = name;
+  const c = document.getElementById('treeContainer');
+  c.innerHTML = '<div class="spinner-wrap"><div class="spinner-border text-primary"></div></div>';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('locTreeModal')).show();
+  try {
+    const tree = await req('GET', `/locations/tree?rootId=${rootId}`);
+    c.innerHTML = renderTreeNodes(tree, true);
+  } catch (e) { c.innerHTML = `<div class="alert alert-danger">${errMsg(e)}</div>`; }
+}
+
+function renderTreeNodes(nodes, isRoot) {
+  if (!nodes || !nodes.length) return '';
+  return nodes.map(n => `
+    <div class="tree-node ${n.isBookable ? 'bookable' : ''} ${isRoot ? 'root-node ms-0' : ''}">
+      <div class="d-flex align-items-center gap-2 py-1">
+        <span class="fw-semibold">${n.name}</span>
+        <small class="text-muted"><code>${n.locationNumber}</code></small>
+        ${badge(n.type)}
+        ${n.isBookable ? `<span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size:.7rem">Bookable · cap ${n.capacity}</span>` : ''}
+        ${n.openTimeRule ? `<small class="text-muted"><i class="bi bi-clock me-1"></i>${n.openTimeRule}</small>` : ''}
+        <div class="ms-auto d-flex gap-1">
+          <button class="btn btn-xs btn-outline-primary" style="padding:1px 6px;font-size:.75rem" onclick="openLocationForm('${n.id}')"><i class="bi bi-pencil"></i></button>
+          <button class="btn btn-xs btn-outline-danger" style="padding:1px 6px;font-size:.75rem" onclick="deleteLocation('${n.id}','${n.name}')"><i class="bi bi-trash"></i></button>
+        </div>
+      </div>
+      ${renderTreeNodes(n.children, false)}
+    </div>
+  `).join('');
+}
+
+// Location Form
+async function openLocationForm(id) {
+  document.getElementById('locFormTitle').textContent = id ? 'Edit Location' : 'New Location';
+  document.getElementById('locId').value = id || '';
+  document.getElementById('locName').value = '';
+  document.getElementById('locNumber').value = '';
+  document.getElementById('locType').value = 'BUILDING';
+  document.getElementById('locParent').value = '';
+  document.getElementById('locCapacity').value = '';
+  document.getElementById('locOpenTime').value = '';
+  toggleBookableFields();
+
+  if (id) {
+    try {
+      const loc = await req('GET', `/locations/${id}`);
+      document.getElementById('locName').value = loc.name || '';
+      document.getElementById('locNumber').value = loc.locationNumber || '';
+      document.getElementById('locType').value = loc.type || 'BUILDING';
+      document.getElementById('locParent').value = loc.parentId || '';
+      document.getElementById('locCapacity').value = loc.capacity || '';
+      document.getElementById('locOpenTime').value = loc.openTimeRule || '';
+      toggleBookableFields();
+    } catch (e) { toast(errMsg(e), false); return; }
+  }
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('locFormModal')).show();
+}
+
+function toggleBookableFields() {
+  const show = document.getElementById('locType').value === 'MEETING_ROOM';
+  document.getElementById('bookableFields').style.display = show ? '' : 'none';
+}
+
+async function saveLocation() {
+  const id = document.getElementById('locId').value;
+  const body = {
+    name: document.getElementById('locName').value.trim(),
+    locationNumber: document.getElementById('locNumber').value.trim(),
+    type: document.getElementById('locType').value,
+    parentId: document.getElementById('locParent').value || null,
+  };
+  if (body.type === 'MEETING_ROOM') {
+    const cap = document.getElementById('locCapacity').value;
+    if (cap) body.capacity = parseInt(cap);
+    const otr = document.getElementById('locOpenTime').value.trim();
+    if (otr) body.openTimeRule = otr;
+  }
+  try {
+    if (id) await req('PATCH', `/locations/${id}`, body);
+    else await req('POST', '/locations', body);
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('locFormModal')).hide();
+    toast(id ? 'Location updated' : 'Location created');
+    loadLocations();
+  } catch (e) { toast(errMsg(e), false); }
+}
+
+async function deleteLocation(id, name) {
+  if (!confirm(`Delete "${name}"?`)) return;
+  try {
+    await req('DELETE', `/locations/${id}`);
+    toast('Location deleted');
+    loadLocations();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('locTreeModal')).hide();
+  } catch (e) { toast(errMsg(e), false); }
+}
+
+// ═══════════════════════════════════════════════════════
+// TAB DEPARTMENT
+// ═══════════════════════════════════════════════════════
+let allDepts = [];
+
+async function loadDepts() {
+  const tbody = document.getElementById('deptBody');
+  tbody.innerHTML = '<tr><td colspan="4" class="text-center py-3"><div class="spinner-border spinner-border-sm text-primary"></div></td></tr>';
+  try {
+    allDepts = await req('GET', '/departments');
+    tbody.innerHTML = allDepts.map((d, i) => `
+      <tr>
+        <td class="text-muted">${i + 1}</td>
+        <td><span class="badge bg-primary">${d.code}</span></td>
+        <td>${d.name}</td>
+        <td>
+          <button class="btn btn-sm btn-outline-primary me-1" onclick="openDeptForm('${d.id}')"><i class="bi bi-pencil"></i></button>
+          <button class="btn btn-sm btn-outline-danger" onclick="deleteDept('${d.id}','${d.code}')"><i class="bi bi-trash"></i></button>
+        </td>
+      </tr>
+    `).join('');
+    // Refresh dept select in booking form
+    const bkgDept = document.getElementById('bkgDept');
+    const cur = bkgDept.value;
+    bkgDept.innerHTML = '<option value="">Select department…</option>';
+    allDepts.forEach(d => {
+      const o = document.createElement('option');
+      o.value = d.id; o.textContent = `${d.code} — ${d.name}`;
+      bkgDept.appendChild(o);
+    });
+    if (cur) bkgDept.value = cur;
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="4"><div class="alert alert-danger mb-0">${errMsg(e)}</div></td></tr>`;
+  }
+}
+
+async function openDeptForm(id) {
+  document.getElementById('deptFormTitle').textContent = id ? 'Edit Department' : 'New Department';
+  document.getElementById('deptId').value = id || '';
+  document.getElementById('deptCode').value = '';
+  document.getElementById('deptName').value = '';
+  if (id) {
+    const d = allDepts.find(x => x.id === id);
+    if (d) {
+      document.getElementById('deptCode').value = d.code;
+      document.getElementById('deptName').value = d.name;
+    }
+  }
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('deptFormModal')).show();
+}
+
+async function saveDept() {
+  const id = document.getElementById('deptId').value;
+  const body = {
+    code: document.getElementById('deptCode').value.trim(),
+    name: document.getElementById('deptName').value.trim(),
+  };
+  try {
+    if (id) await req('PATCH', `/departments/${id}`, body);
+    else await req('POST', '/departments', body);
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('deptFormModal')).hide();
+    toast(id ? 'Department updated' : 'Department created');
+    loadDepts();
+  } catch (e) { toast(errMsg(e), false); }
+}
+
+async function deleteDept(id, code) {
+  if (!confirm(`Delete department "${code}"?`)) return;
+  try {
+    await req('DELETE', `/departments/${id}`);
+    toast('Department deleted');
+    loadDepts();
+  } catch (e) { toast(errMsg(e), false); }
+}
+
+// ═══════════════════════════════════════════════════════
+// TAB BOOKING
+// ═══════════════════════════════════════════════════════
+let allBookings = [];
+
+async function loadBookings() {
+  const tbody = document.getElementById('bookingBody');
+  tbody.innerHTML = '<tr><td colspan="8" class="text-center py-3"><div class="spinner-border spinner-border-sm text-primary"></div></td></tr>';
+  const locId = document.getElementById('bkgLocFilter').value;
+  try {
+    const qs = locId ? `?locationId=${locId}` : '';
+    allBookings = await req('GET', `/bookings${qs}`);
+    if (!allBookings.length) {
+      tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">No bookings found.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = allBookings.map((b, i) => {
+      const loc = flatLocations.find(l => l.id === b.locationId);
+      const dept = allDepts.find(d => d.id === b.departmentId);
+      const cancelled = b.status === 'CANCELLED';
+      return `
+        <tr class="${cancelled ? 'table-secondary text-muted' : ''}">
+          <td>${i + 1}</td>
+          <td>${loc ? `<code>${loc.locationNumber}</code> ${loc.name}` : b.locationId}</td>
+          <td>${dept ? dept.code : b.departmentId}</td>
+          <td>${b.attendees}</td>
+          <td>${fmtDt(b.startTime)}</td>
+          <td>${fmtDt(b.endTime)}</td>
+          <td><span class="badge bg-${cancelled ? 'secondary' : 'success'}">${b.status}</span></td>
+          <td>
+            ${!cancelled ? `<button class="btn btn-sm btn-outline-danger" onclick="cancelBooking('${b.id}')"><i class="bi bi-x-circle"></i></button>` : ''}
+          </td>
+        </tr>
+      `;
+    }).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="8"><div class="alert alert-danger mb-0">${errMsg(e)}</div></td></tr>`;
+  }
+}
+
+async function openBookingForm(id) {
+  document.getElementById('bookingFormTitle').textContent = id ? 'Edit Booking' : 'New Booking';
+  document.getElementById('bkgId').value = id || '';
+  document.getElementById('bkgLocation').value = '';
+  document.getElementById('bkgDept').value = '';
+  document.getElementById('bkgAttendees').value = '';
+  // default: today 10:00 – 11:00 local
+  const now = new Date();
+  now.setHours(10, 0, 0, 0);
+  const pad = n => String(n).padStart(2, '0');
+  const dtLocal = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const end = new Date(now); end.setHours(11);
+  document.getElementById('bkgStart').value = dtLocal(now);
+  document.getElementById('bkgEnd').value = dtLocal(end);
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('bookingFormModal')).show();
+}
+
+async function saveBooking() {
+  const body = {
+    locationId: document.getElementById('bkgLocation').value,
+    departmentId: document.getElementById('bkgDept').value,
+    attendees: parseInt(document.getElementById('bkgAttendees').value),
+    startTime: new Date(document.getElementById('bkgStart').value).toISOString(),
+    endTime: new Date(document.getElementById('bkgEnd').value).toISOString(),
+  };
+  try {
+    await req('POST', '/bookings', body);
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('bookingFormModal')).hide();
+    toast('Booking confirmed!');
+    loadBookings();
+  } catch (e) { toast(errMsg(e), false); }
+}
+
+async function cancelBooking(id) {
+  if (!confirm('Cancel this booking?')) return;
+  try {
+    await req('DELETE', `/bookings/${id}`);
+    toast('Booking cancelled');
+    loadBookings();
+  } catch (e) { toast(errMsg(e), false); }
+}
+
+// ═══════════════════════════════════════════════════════
+// INIT — load data when tab becomes visible
+// ═══════════════════════════════════════════════════════
+document.querySelectorAll('[data-bs-toggle="tab"]').forEach(btn => {
+  btn.addEventListener('shown.bs.tab', e => {
+    const target = e.target.getAttribute('data-bs-target');
+    if (target === '#tabDept') loadDepts();
+    if (target === '#tabBooking') { loadDepts(); loadBookings(); }
+  });
+});
+
+// Initial load
+loadLocations();
+</script>
+</body>
+</html>

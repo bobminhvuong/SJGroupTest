@@ -5,7 +5,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import {
+  DataSource,
+  EntityManager,
+  QueryFailedError,
+  Repository,
+} from 'typeorm';
 import { LockService } from '../../shared/cache/cache.contracts';
 import { LockKey, LockTtl } from '../../shared/cache/cache-keys';
 import { BookingValidationException } from '../../common/exceptions/booking-validation.exception';
@@ -14,7 +19,7 @@ import {
   formatOpenTimeRule,
 } from '../../common/open-time/open-time';
 import { Location } from '../location/entities/location.entity';
-import { LocationService } from '../location/location.service';
+import { LocationService } from '../location/services/location.service';
 import { Department } from '../department/entities/department.entity';
 import { PagedResult } from '../../common/dto/paged-result';
 import { CreateBookingDto } from './dto/create-booking.dto';
@@ -26,6 +31,9 @@ import { BookingStatus } from './enums/booking-status.enum';
 export class BookingService {
   private readonly logger = new Logger(BookingService.name);
 
+  /** Postgres exclusion_violation — raised by the no_overlap_booking constraint. */
+  private static readonly PG_EXCLUSION_VIOLATION = '23P01';
+
   constructor(
     @InjectRepository(Booking)
     private readonly bookingRepo: Repository<Booking>,
@@ -33,6 +41,7 @@ export class BookingService {
     private readonly departmentRepo: Repository<Department>,
     private readonly locationService: LocationService,
     private readonly lock: LockService,
+    private readonly dataSource: DataSource,
   ) {}
 
   // ── CREATE (validate 3 rules + overlap) ────────────────────────────────────────
@@ -43,7 +52,10 @@ export class BookingService {
     const start = new Date(dto.startTime);
     const end = new Date(dto.endTime);
 
-    // ── Overlap: lock per room + day to prevent concurrent double-booking ──────────
+    // Two layers of overlap protection:
+    //  1) Redis lock (per room + day) — fast path, avoids contention across instances.
+    //  2) A transaction + the GiST EXCLUDE constraint — the real guarantee; holds even
+    //     if Redis is down or the lock TTL expires mid-write.
     const lockKey = LockKey.booking(room.id, dto.startTime.slice(0, 10));
     const token = await this.lock.acquireLock(lockKey, LockTtl.bookingMs);
     if (!token) {
@@ -52,26 +64,38 @@ export class BookingService {
     }
 
     try {
-      const overlap = await this.findOverlap(room.id, start, end);
-      if (overlap) {
-        this.reject(dto, `overlaps booking ${overlap.id}`);
-        throw new ConflictException('Time slot already booked');
-      }
+      return await this.dataSource.transaction(async (manager) => {
+        const overlap = await this.findOverlap(manager, room.id, start, end);
+        if (overlap) {
+          this.reject(dto, `overlaps booking ${overlap.id}`);
+          throw new ConflictException('Time slot already booked');
+        }
 
-      const booking = this.bookingRepo.create({
-        locationId: room.id,
-        departmentId: dto.departmentId,
-        attendees: dto.attendees,
-        startTime: start,
-        endTime: end,
-        status: BookingStatus.CONFIRMED,
+        const repo = manager.getRepository(Booking);
+        const booking = repo.create({
+          locationId: room.id,
+          departmentId: dto.departmentId,
+          attendees: dto.attendees,
+          startTime: start,
+          endTime: end,
+          status: BookingStatus.CONFIRMED,
+        });
+
+        try {
+          const saved = await repo.save(booking);
+          this.logger.log(
+            `Booking ${saved.id} CONFIRMED room=${room.locationNumber} ` +
+              `${dto.startTime} -> ${dto.endTime} attendees=${dto.attendees}`,
+          );
+          return saved;
+        } catch (err) {
+          if (this.isExclusionViolation(err)) {
+            this.reject(dto, 'overlap rejected by DB constraint (race)');
+            throw new ConflictException('Time slot already booked');
+          }
+          throw err;
+        }
       });
-      const saved = await this.bookingRepo.save(booking);
-      this.logger.log(
-        `Booking ${saved.id} CONFIRMED room=${room.locationNumber} ` +
-          `${dto.startTime} -> ${dto.endTime} attendees=${dto.attendees}`,
-      );
-      return saved;
     } finally {
       await this.lock.releaseLock(lockKey, token);
     }
@@ -89,7 +113,7 @@ export class BookingService {
 
   /** List bookings with filters and pagination. */
   async findMany(dto: ListBookingDto): Promise<PagedResult<Booking>> {
-    const { page, limit, locationId, date, status } = dto;
+    const { page, limit, locationId, departmentId, date, status } = dto;
     const qb = this.bookingRepo
       .createQueryBuilder('b')
       .leftJoinAndSelect('b.location', 'location')
@@ -97,6 +121,8 @@ export class BookingService {
       .orderBy('b.start_time', 'ASC');
 
     if (locationId) qb.andWhere('b.location_id = :locationId', { locationId });
+    if (departmentId)
+      qb.andWhere('b.department_id = :departmentId', { departmentId });
     if (date) {
       qb.andWhere('b.start_time >= :from AND b.start_time < :to', {
         from: `${date}T00:00:00`,
@@ -113,19 +139,26 @@ export class BookingService {
     return new PagedResult(data, total, page, limit);
   }
 
-  // ── CANCEL (soft) ────────────────────────────────────────────────────────────
+  // ── CANCEL ───────────────────────────────────────────────────────────────────
+  /**
+   * Mark a booking CANCELLED. We do NOT soft-delete: the row stays queryable (history,
+   * status filter), and since the overlap constraint/lookup only counts CONFIRMED rows,
+   * the time slot is freed immediately.
+   */
   async cancel(id: string): Promise<Booking> {
     const booking = await this.findOne(id);
     if (booking.status === BookingStatus.CANCELLED) return booking;
     booking.status = BookingStatus.CANCELLED;
     const saved = await this.bookingRepo.save(booking);
-    await this.bookingRepo.softRemove(saved);
     this.logger.log(`Booking ${id} CANCELLED`);
     return saved;
   }
 
   // ── Rule helpers ───────────────────────────────────────────────────────────────
-  private async assertBusinessRules(room: Location, dto: CreateBookingDto): Promise<void> {
+  private async assertBusinessRules(
+    room: Location,
+    dto: CreateBookingDto,
+  ): Promise<void> {
     // 0) DTO-level: start < end
     if (new Date(dto.startTime) >= new Date(dto.endTime)) {
       this.reject(dto, 'startTime is not before endTime');
@@ -183,16 +216,27 @@ export class BookingService {
 
   /** Find a CONFIRMED, non-deleted booking overlapping [start,end) on the same room. */
   private async findOverlap(
+    manager: EntityManager,
     locationId: string,
     start: Date,
     end: Date,
   ): Promise<Booking | null> {
-    return this.bookingRepo
+    return manager
+      .getRepository(Booking)
       .createQueryBuilder('b')
       .where('b.location_id = :locationId', { locationId })
       .andWhere('b.status = :status', { status: BookingStatus.CONFIRMED })
       .andWhere('b.start_time < :end AND b.end_time > :start', { start, end })
       .getOne();
+  }
+
+  /** True if the error is the Postgres no_overlap_booking exclusion violation. */
+  private isExclusionViolation(err: unknown): boolean {
+    const code =
+      err instanceof QueryFailedError
+        ? (err.driverError as { code?: string })?.code
+        : (err as { code?: string })?.code;
+    return code === BookingService.PG_EXCLUSION_VIOLATION;
   }
 
   /** Unified logging for booking rejection reason (non-functional requirement: log reject). */

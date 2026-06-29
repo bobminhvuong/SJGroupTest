@@ -1,7 +1,6 @@
 import { DataSource } from 'typeorm';
 import { Department } from '../../modules/department/entities/department.entity';
 import { Location } from '../../modules/location/entities/location.entity';
-import { LocationType } from '../../modules/location/enums/location-type.enum';
 import { DEPARTMENT_SEED, LOCATION_SEED } from './seed-data';
 
 /**
@@ -56,7 +55,7 @@ export async function seedDatabase(
       const location = locRepo.create({
         name: seed.name,
         locationNumber: seed.locationNumber,
-        type: seed.type as LocationType,
+        type: seed.type,
         parentId: parent?.id ?? null,
         capacity: seed.capacity,
         openFrom: seed.openFrom,

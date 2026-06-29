@@ -1,16 +1,14 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
 /**
- * `department` table (runs FIRST — location & booking reference it).
- * "Department's job": create the table (bigserial PK) + partial unique indexes on
- * `code` and `name` (WHERE deleted_at IS NULL, consistent with soft delete).
+ * `departments` table (runs FIRST — locations & bookings reference it).
  */
 export class CreateDepartmentTable1782500000001 implements MigrationInterface {
   name = 'CreateDepartmentTable1782500000001';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
-      `CREATE TABLE "department" (
+      `CREATE TABLE "departments" (
         "id" BIGSERIAL NOT NULL,
         "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
         "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
@@ -21,16 +19,16 @@ export class CreateDepartmentTable1782500000001 implements MigrationInterface {
       )`,
     );
     await queryRunner.query(
-      `CREATE UNIQUE INDEX "uq_department_code" ON "department" ("code") WHERE "deleted_at" IS NULL`,
+      `CREATE UNIQUE INDEX "uq_department_code" ON "departments" ("code") WHERE "deleted_at" IS NULL`,
     );
     await queryRunner.query(
-      `CREATE UNIQUE INDEX "uq_department_name" ON "department" ("name") WHERE "deleted_at" IS NULL`,
+      `CREATE UNIQUE INDEX "uq_department_name" ON "departments" ("name") WHERE "deleted_at" IS NULL`,
     );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`DROP INDEX "public"."uq_department_name"`);
     await queryRunner.query(`DROP INDEX "public"."uq_department_code"`);
-    await queryRunner.query(`DROP TABLE "department"`);
+    await queryRunner.query(`DROP TABLE "departments"`);
   }
 }

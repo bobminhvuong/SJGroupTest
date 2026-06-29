@@ -6,15 +6,17 @@ import { HttpExceptionFilter } from '../../src/common/filters/http-exception.fil
 import { CreateDepartmentTable1782500000001 } from '../../src/database/migrations/1782500000001-CreateDepartmentTable';
 import { CreateLocationTable1782500000002 } from '../../src/database/migrations/1782500000002-CreateLocationTable';
 import { CreateBookingTable1782500000003 } from '../../src/database/migrations/1782500000003-CreateBookingTable';
+import { AddLocationTypeTable1782500000004 } from '../../src/database/migrations/1782500000004-AddLocationTypeTable';
 import { seedDatabase } from '../../src/database/seeds/seed-runner';
 import { Department } from '../../src/modules/department/entities/department.entity';
+import { LocationTypeEntity } from '../../src/modules/location/entities/location-type.entity';
 import { Location } from '../../src/modules/location/entities/location.entity';
 import { Booking } from '../../src/modules/booking/entities/booking.entity';
 
 /**
- * Dựng schema sạch cho DB test: drop toàn bộ schema public, chạy lại 3 migration
- * (đúng thứ tự per-table), rồi seed dữ liệu mẫu. Dùng entity/migration class TƯỜNG
- * MINH (không glob) để chắc chắn nạp được dưới ts-jest.
+ * Rebuilds a clean schema for the test DB: drops the entire public schema, re-runs the 3
+ * migrations in table order, then seeds sample data. Uses explicit entity/migration classes
+ * (no glob) to guarantee they load correctly under ts-jest.
  */
 export async function prepareTestSchema(): Promise<void> {
   const ds = new DataSource({
@@ -24,11 +26,12 @@ export async function prepareTestSchema(): Promise<void> {
     username: process.env.DB_USERNAME,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_DATABASE,
-    entities: [Department, Location, Booking],
+    entities: [Department, LocationTypeEntity, Location, Booking],
     migrations: [
       CreateDepartmentTable1782500000001,
       CreateLocationTable1782500000002,
       CreateBookingTable1782500000003,
+      AddLocationTypeTable1782500000004,
     ],
     synchronize: false,
   });
@@ -40,7 +43,7 @@ export async function prepareTestSchema(): Promise<void> {
   await ds.destroy();
 }
 
-/** Tạo Nest app với CÙNG cấu hình global như main.ts (prefix + pipe + filter). */
+/** Creates a Nest app with the SAME global config as main.ts (prefix + pipe + filter). */
 export async function createTestApp(): Promise<INestApplication> {
   const moduleRef = await Test.createTestingModule({
     imports: [AppModule],
@@ -60,31 +63,31 @@ export async function createTestApp(): Promise<INestApplication> {
   return app;
 }
 
-/** Xoá sạch bảng booking giữa các test để overlap/độc lập được đảm bảo. */
+/** Truncates the booking table between tests to ensure overlap isolation. */
 export async function truncateBookings(app: INestApplication): Promise<void> {
-  await app.get(DataSource).query('TRUNCATE TABLE "booking" RESTART IDENTITY');
+  await app.get(DataSource).query('TRUNCATE TABLE "bookings" RESTART IDENTITY');
 }
 
-/** Tiện ích lấy id location theo location_number (số bigint dạng string). */
+/** Looks up a location id by location_number (bigint returned as a numeric string). */
 export async function locationIdByNumber(
   app: INestApplication,
   locationNumber: string,
 ): Promise<string> {
   const rows: Array<{ id: string }> = await app
     .get(DataSource)
-    .query('SELECT id FROM location WHERE location_number = $1', [
+    .query('SELECT id FROM locations WHERE location_number = $1', [
       locationNumber,
     ]);
   return rows[0].id;
 }
 
-/** Tiện ích lấy id department theo code. */
+/** Looks up a department id by code. */
 export async function departmentIdByCode(
   app: INestApplication,
   code: string,
 ): Promise<string> {
   const rows: Array<{ id: string }> = await app
     .get(DataSource)
-    .query('SELECT id FROM department WHERE code = $1', [code]);
+    .query('SELECT id FROM departments WHERE code = $1', [code]);
   return rows[0].id;
 }

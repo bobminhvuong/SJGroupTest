@@ -39,7 +39,6 @@ export abstract class CacheService {
     moduleName: CacheModuleName,
     params: unknown,
     callback: () => Promise<T>,
-    tenantId?: number,
   ): Promise<T>;
 }
 

@@ -67,10 +67,9 @@ export class RedisCacheService extends CacheService implements OnModuleDestroy {
     moduleName: CacheModuleName,
     params: unknown,
     callback: () => Promise<T>,
-    tenantId?: number,
   ): Promise<T> {
     const cfg = getCacheConfig(moduleName);
-    const key = this.buildKey(cfg.prefix, this.hashParams(params), tenantId);
+    const key = this.buildKey(cfg.prefix, this.hashParams(params));
 
     const cached = await this.get<T>(key);
     if (cached !== null) return cached;
@@ -104,16 +103,9 @@ export class RedisCacheService extends CacheService implements OnModuleDestroy {
     return `tag:${tag}`;
   }
 
-  /** Key = prefix[:t{tenantId}]:{hash(params)} */
-  private buildKey(
-    prefix: string,
-    paramHash: string,
-    tenantId?: number,
-  ): string {
-    const parts = [prefix];
-    if (tenantId !== undefined) parts.push(`t${tenantId}`);
-    parts.push(paramHash);
-    return parts.join(':');
+  /** Key = prefix:{hash(params)} */
+  private buildKey(prefix: string, paramHash: string): string {
+    return `${prefix}:${paramHash}`;
   }
 
   private hashParams(params: unknown): string {

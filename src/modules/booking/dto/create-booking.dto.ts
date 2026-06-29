@@ -1,12 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
 import { IsInt, IsISO8601, IsNumberString, Min } from 'class-validator';
-
-/** Normalize an id (number|string) -> string to match the bigint key. */
-const toIdString = ({ value }: { value: unknown }): unknown =>
-  typeof value === 'number' || typeof value === 'bigint'
-    ? String(value)
-    : value;
+import { ToIdString } from '../../../common/transforms/to-id-string';
 
 /**
  * Create a booking. startTime/endTime stay as ISO-8601 strings (with offset) so open
@@ -15,7 +9,7 @@ const toIdString = ({ value }: { value: unknown }): unknown =>
  */
 export class CreateBookingDto {
   @ApiProperty({ example: '4', description: 'id (bigint) of the booked room' })
-  @Transform(toIdString)
+  @ToIdString()
   @IsNumberString()
   locationId!: string;
 
@@ -23,7 +17,7 @@ export class CreateBookingDto {
     example: '3',
     description: 'id (bigint) of the requesting department (must exist in DB)',
   })
-  @Transform(toIdString)
+  @ToIdString()
   @IsNumberString()
   departmentId!: string;
 

@@ -10,11 +10,11 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
-import { ParseIdPipe } from '../../common/pipes/parse-id.pipe';
-import { CreateLocationDto } from './dto/create-location.dto';
-import { ListLocationParentDto } from './dto/list-location-parent.dto';
-import { UpdateLocationDto } from './dto/update-location.dto';
-import { LocationService } from './location.service';
+import { ParseIdPipe } from '../../../common/pipes/parse-id.pipe';
+import { CreateLocationDto } from '../dto/create-location.dto';
+import { ListLocationParentDto } from '../dto/list-location-parent.dto';
+import { UpdateLocationDto } from '../dto/update-location.dto';
+import { LocationService } from '../services/location.service';
 
 @ApiTags('locations')
 @Controller('locations')
@@ -28,21 +28,27 @@ export class LocationController {
   }
 
   @Get('tree')
-  @ApiOperation({ summary: 'Get the location tree (cached), optionally filtered by root and type' })
-  @ApiQuery({ name: 'rootId', required: false, description: 'Root node id (null = all buildings)' })
-  @ApiQuery({ name: 'type', required: false, description: 'Filter by location type (BUILDING, FLOOR, OFFICE, MEETING_ROOM, OTHER)' })
-  getTree(
-    @Query('rootId') rootId?: string,
-    @Query('type') type?: string,
-  ) {
+  @ApiOperation({
+    summary:
+      'Get the location tree (cached), optionally filtered by root and type',
+  })
+  @ApiQuery({ name: 'rootId', required: false })
+  @ApiQuery({
+    name: 'type',
+    required: false,
+    description: 'BUILDING | FLOOR | OFFICE | MEETING_ROOM | OTHER',
+  })
+  getTree(@Query('rootId') rootId?: string, @Query('type') type?: string) {
     return this.locationService.getTree(rootId, type);
   }
 
   @Get('parents')
-  @ApiOperation({ summary: 'List parent locations (parent_id IS NULL) with pagination' })
-  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Page number (default 1)' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Items per page (default 20)' })
-  @ApiQuery({ name: 'type', required: false, description: 'Filter by location type (BUILDING, FLOOR, etc)' })
+  @ApiOperation({
+    summary: 'List root locations (parent_id IS NULL) with pagination',
+  })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'type', required: false })
   listParents(@Query() query: ListLocationParentDto) {
     return this.locationService.listParents({
       page: query.page || 1,
@@ -65,7 +71,9 @@ export class LocationController {
 
   @Delete(':id')
   @HttpCode(204)
-  @ApiOperation({ summary: 'Soft-delete a location (blocked if it has active children)' })
+  @ApiOperation({
+    summary: 'Soft-delete a location (blocked if it has active children)',
+  })
   remove(@Param('id', ParseIdPipe) id: string) {
     return this.locationService.remove(id);
   }

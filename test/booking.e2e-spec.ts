@@ -9,17 +9,17 @@ import {
 } from './utils/e2e';
 
 /**
- * E2E cho luồng booking — phủ 3 rule (department/capacity/time) + overlap + cancel.
- * Room A-01-01: EFM, capacity 10, MON-FRI 09:00-18:00. 2026-06-26 là Thứ Sáu.
+ * E2E for the booking flow — covers 3 rules (department/capacity/time) + overlap + cancel.
+ * Room A-01-01: EFM, capacity 10, MON-FRI 09:00-18:00. 2026-06-26 is a Friday.
  */
 describe('Booking (e2e)', () => {
   let app: INestApplication;
   const base = '/api/v1/bookings';
 
   let roomId: string; // A-01-01 (EFM, cap 10, MON-FRI)
-  let lobbyId: string; // A-01-Lobby (không bookable)
+  let lobbyId: string; // A-01-Lobby (not bookable)
   let efmId: string;
-  let fssId: string; // department khác -> sai department
+  let fssId: string; // different department -> department mismatch
 
   const slot = (startHour: number, endHour: number) => ({
     locationId: roomId,
@@ -100,9 +100,9 @@ describe('Booking (e2e)', () => {
       .expect(201);
     const id = created.body.id as string;
 
-    await request(app.getHttpServer()).delete(`${base}/${id}`).expect(200);
+    await request(app.getHttpServer()).post(`${base}/${id}/cancel`).expect(200);
 
-    // Sau khi huỷ, đặt lại đúng slot đó phải thành công.
+    // After cancellation, rebooking the same slot must succeed.
     await request(app.getHttpServer())
       .post(base)
       .send(slot(14, 15))

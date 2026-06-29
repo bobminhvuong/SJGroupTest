@@ -1,9 +1,9 @@
 /**
- * Chạy TRƯỚC khi import AppModule (qua jest setupFiles). Ép mọi biến DB_* sang bộ
- * DB_TEST_* để e2e đụng database `booking_test`, KHÔNG ảnh hưởng DB dev.
+ * Runs BEFORE AppModule is imported (via jest setupFiles). Overrides all DB_* variables
+ * with the DB_TEST_* set so e2e tests hit `booking_test`, leaving the dev database untouched.
  *
- * dotenv không ghi đè biến đã có sẵn trong process.env, nên việc set ở đây sẽ
- * "thắng" giá trị trong .env khi ConfigModule nạp sau đó.
+ * dotenv does not overwrite variables already present in process.env, so values set here
+ * take precedence over anything in .env when ConfigModule loads later.
  */
 import 'dotenv/config';
 

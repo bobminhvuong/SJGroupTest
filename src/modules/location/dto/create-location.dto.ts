@@ -1,7 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
 import {
-  IsEnum,
   IsInt,
   IsNumberString,
   IsOptional,
@@ -10,19 +8,14 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
-import { LocationType } from '../enums/location-type.enum';
-
-/** Normalize an id (number|string) -> string to match the bigint key; keep null/undefined. */
-const toIdString = ({ value }: { value: unknown }): unknown =>
-  typeof value === 'number' || typeof value === 'bigint'
-    ? String(value)
-    : value;
+import { ToIdString } from '../../../common/transforms/to-id-string';
+import { LocationType } from '../entities/location-type.entity';
 
 /**
  * Create a location node. A bookable node (MEETING_ROOM) also needs capacity/
  * openTimeRule; structural nodes (BUILDING/FLOOR/OFFICE/OTHER) ignore those (service sets NULL).
- * 
- * NOTE: Department is specified per booking, NOT per location. 
+ *
+ * NOTE: Department is specified per booking, NOT per location.
  * A room can be booked by any department.
  */
 export class CreateLocationDto {
@@ -36,20 +29,29 @@ export class CreateLocationDto {
   @MaxLength(64)
   locationNumber!: string;
 
-  @ApiProperty({ enum: LocationType })
-  @IsEnum(LocationType)
-  type!: LocationType;
+  @ApiProperty({
+    example: LocationType.MEETING_ROOM,
+    description:
+      'Type code. Must match an existing location_types.code (validated at runtime + DB FK). ' +
+      'Default codes: BUILDING | FLOOR | OFFICE | MEETING_ROOM | OTHER.',
+  })
+  @IsString()
+  @MaxLength(50)
+  type!: string;
 
   @ApiPropertyOptional({
     example: '5',
     description: 'parent node id (bigint); null = root node (BUILDING)',
   })
   @IsOptional()
-  @Transform(toIdString)
+  @ToIdString()
   @IsNumberString()
   parentId?: string | null;
 
-  @ApiPropertyOptional({ example: 10, description: 'Required for MEETING_ROOM' })
+  @ApiPropertyOptional({
+    example: 10,
+    description: 'Required for MEETING_ROOM',
+  })
   @IsOptional()
   @IsInt()
   @Min(1)
@@ -58,7 +60,8 @@ export class CreateLocationDto {
 
   @ApiPropertyOptional({
     example: 'MON-FRI:09:00-18:00',
-    description: 'Syntax "DAY-DAY:HH:mm-HH:mm" or "ALWAYS". Required for MEETING_ROOM.',
+    description:
+      'Syntax "DAY-DAY:HH:mm-HH:mm" or "ALWAYS". Required for MEETING_ROOM.',
   })
   @IsOptional()
   @IsString()

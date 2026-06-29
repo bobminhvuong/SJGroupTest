@@ -11,16 +11,34 @@ export class DepartmentController {
   constructor(private readonly departmentService: DepartmentService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Create department (prevent duplicate code & name)' })
+  @ApiOperation({
+    summary: 'Create department (prevent duplicate code & name)',
+  })
   create(@Body() dto: CreateDepartmentDto) {
     return this.departmentService.create(dto);
   }
 
   @Get()
-  @ApiOperation({ summary: 'List departments (search by code/name, paginated)' })
-  @ApiQuery({ name: 'search', required: false, description: 'Search by code or name (case-insensitive, partial match)' })
-  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Page number (default 1)' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Items per page (default 20)' })
+  @ApiOperation({
+    summary: 'List departments (search by code/name, paginated)',
+  })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    description: 'Search by code or name (case-insensitive, partial match)',
+  })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    description: 'Page number (default 1)',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Items per page (default 20)',
+  })
   findAll(@Query() dto: ListDepartmentDto) {
     return this.departmentService.findAll(dto);
   }

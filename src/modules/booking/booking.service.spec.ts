@@ -22,6 +22,7 @@ describe('BookingService', () => {
   };
   let locationService: { getEntityOrFail: jest.Mock };
   let redis: { acquireLock: jest.Mock; releaseLock: jest.Mock };
+  let dataSource: { transaction: jest.Mock };
   let overlapResult: Booking | null;
 
   /** Sample bookable room: capacity 10, MON-FRI 09:00-18:00. */
@@ -72,12 +73,19 @@ describe('BookingService', () => {
       acquireLock: jest.fn().mockResolvedValue('lock-token'),
       releaseLock: jest.fn().mockResolvedValue(undefined),
     };
+    // transaction() runs the callback with a manager that hands back the mocked repo.
+    dataSource = {
+      transaction: jest.fn((cb: (m: unknown) => unknown) =>
+        cb({ getRepository: () => bookingRepo }),
+      ),
+    };
 
     service = new BookingService(
       bookingRepo as never,
       departmentRepo as never,
       locationService as never,
       redis,
+      dataSource as never,
     );
   });
 
@@ -138,6 +146,16 @@ describe('BookingService', () => {
 
   it('rejects an overlapping booking with 409 and still releases the lock', async () => {
     overlapResult = { id: 'existing' } as Booking;
+    await expect(service.create(validDto())).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(redis.releaseLock).toHaveBeenCalledTimes(1);
+  });
+
+  it('maps the DB exclusion-violation (race) to 409 and releases the lock', async () => {
+    bookingRepo.save.mockRejectedValueOnce(
+      Object.assign(new Error('exclusion'), { code: '23P01' }),
+    );
     await expect(service.create(validDto())).rejects.toBeInstanceOf(
       ConflictException,
     );

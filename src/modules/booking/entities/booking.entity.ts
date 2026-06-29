@@ -6,11 +6,14 @@ import { BookingStatus } from '../enums/booking-status.enum';
 
 /**
  * A single room booking. Overlap is only counted among CONFIRMED, non-soft-deleted
- * bookings of the same location. Index (location_id, start_time, end_time) supports
- * the overlap query.
+ * bookings of the same location. A partial index + a GiST EXCLUDE constraint (see the
+ * migration) guarantee no two CONFIRMED bookings of a room overlap, even under races.
  */
-@Entity('booking')
-@Index('idx_booking_overlap', ['locationId', 'startTime', 'endTime'])
+@Entity('bookings')
+@Index('idx_booking_overlap', ['locationId', 'startTime', 'endTime'], {
+  where: `"status" = 'CONFIRMED' AND "deleted_at" IS NULL`,
+})
+@Index('idx_booking_department', ['departmentId'])
 export class Booking extends BaseEntity {
   @Column({ name: 'location_id', type: 'bigint' })
   locationId!: string;
@@ -29,11 +32,12 @@ export class Booking extends BaseEntity {
   @Column({ type: 'int' })
   attendees!: number;
 
-  // timestamp (no timezone) for readability in the DB — stores the booking wall-clock.
-  @Column({ name: 'start_time', type: 'timestamp' })
+  // timestamptz: store an absolute instant (consistent with created_at/updated_at).
+  // Open-hours validation still reads the requester's wall-clock from the ISO string.
+  @Column({ name: 'start_time', type: 'timestamptz' })
   startTime!: Date;
 
-  @Column({ name: 'end_time', type: 'timestamp' })
+  @Column({ name: 'end_time', type: 'timestamptz' })
   endTime!: Date;
 
   @Column({

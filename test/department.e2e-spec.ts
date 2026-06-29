@@ -27,7 +27,7 @@ describe('Department (e2e)', () => {
       .send({ code: 'HRX', name: 'Human Resources' })
       .expect(201);
     expect(res.body).toMatchObject({ code: 'HRX', name: 'Human Resources' });
-    expect(res.body.id).toMatch(/^\d+$/); // bigint trả về dạng chuỗi số
+    expect(res.body.id).toMatch(/^\d+$/); // bigint is returned as a numeric string
   });
 
   it('rejects a duplicate code with 409', () =>

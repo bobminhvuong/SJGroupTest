@@ -40,9 +40,9 @@ describe('Location (e2e)', () => {
 
     const buildingA = roots.find((r) => r.name === 'Building A')!;
     expect(buildingA.id).toMatch(/^\d+$/);
-    expect(buildingA.children.length).toBeGreaterThan(0); // có Floor 1
+    expect(buildingA.children.length).toBeGreaterThan(0); // has Floor 1
     const floor = buildingA.children[0];
-    expect(floor.children.length).toBeGreaterThan(0); // có Room/Lobby...
+    expect(floor.children.length).toBeGreaterThan(0); // has Room/Lobby...
   });
 
   it('GET /locations/:id returns a node with direct children + openTimeRule', async () => {
@@ -74,7 +74,7 @@ describe('Location (e2e)', () => {
       .expect(201);
     expect(created.body.id).toMatch(/^\d+$/);
 
-    // Cache phải được invalidate -> tree mới chứa node vừa tạo.
+    // Cache must be invalidated -> the refreshed tree should contain the newly created node.
     const tree = await request(app.getHttpServer())
       .get(`${base}/tree`)
       .expect(200);

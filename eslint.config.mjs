@@ -33,8 +33,8 @@ export default tseslint.config(
     },
   },
   {
-    // File test thao tác với response `any` của supertest (res.body) — nới các rule
-    // type-checked "unsafe" cho riêng test để không phải rải ép kiểu khắp nơi.
+    // Test files work with supertest's `any` response (res.body) — relax the
+    // type-checked "unsafe" rules for tests only, to avoid scattering casts everywhere.
     files: ['**/*.spec.ts', '**/*.e2e-spec.ts', 'test/**/*.ts'],
     rules: {
       '@typescript-eslint/no-unsafe-member-access': 'off',
